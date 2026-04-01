@@ -329,3 +329,174 @@ func TestErrorHandlingGlobals(t *testing.T) {
 	assertContains(t, code, "_xpp_has_error")
 	assertContains(t, code, `_xpp_error_msg`)
 }
+
+// --- New tests for full runtime integration ---
+
+func TestArrayLiteral(t *testing.T) {
+	code := generate(t, `xuen main() { xuet arr = [1, 2, 3] }`)
+	assertContains(t, code, "xpp_array_new")
+	assertContains(t, code, "xpp_array_push")
+	assertContains(t, code, "xpp_box_int")
+}
+
+func TestArrayLiteralEmpty(t *testing.T) {
+	code := generate(t, `xuen main() { xuet arr = [] }`)
+	assertContains(t, code, "xpp_array_new(0)")
+}
+
+func TestArrayInferType(t *testing.T) {
+	code := generate(t, `xuen main() { xuet arr = [10, 20] }`)
+	assertContains(t, code, "XppArray*")
+}
+
+func TestMapLiteralCodegen(t *testing.T) {
+	code := generate(t, `xuen main() { xuet m = {"a": 1} }`)
+	assertContains(t, code, "xpp_map_new")
+	assertContains(t, code, "xpp_map_set")
+	assertContains(t, code, "xpp_box_int")
+}
+
+func TestMapLiteralEmpty(t *testing.T) {
+	code := generate(t, `xuen main() { xuet m = map_new() }`)
+	assertContains(t, code, "xpp_map_new()")
+}
+
+func TestMapInferType(t *testing.T) {
+	code := generate(t, `xuen main() { xuet m = {"x": 42} }`)
+	assertContains(t, code, "XppMap*")
+}
+
+func TestForEachArray(t *testing.T) {
+	code := generate(t, `xuen main() {
+		xuet arr = [1, 2, 3]
+		xuior (x xuin arr) { print(x) }
+	}`)
+	assertContains(t, code, "xpp_array_len")
+	assertContains(t, code, "xpp_array_get")
+	assertContains(t, code, "xpp_unbox_int")
+}
+
+func TestMethodCallCodegen(t *testing.T) {
+	code := generate(t, `
+		xuiruct Dog { name str }
+		xuimpl Dog { xuen bark(self) { print("woof") } }
+		xuen main() {
+			xuet d = Dog { name = "Rex" }
+			d.bark()
+		}
+	`)
+	assertContains(t, code, "xpp_Dog_bark")
+}
+
+func TestChannelCodegen(t *testing.T) {
+	code := generate(t, `xuen main() { xuet ch = channel() }`)
+	assertContains(t, code, "xpp_channel_new")
+}
+
+func TestChannelInferType(t *testing.T) {
+	code := generate(t, `xuen main() { xuet ch = channel() }`)
+	assertContains(t, code, "XppChannel*")
+}
+
+func TestBuiltinLen(t *testing.T) {
+	code := generate(t, `xuen main() {
+		xuet arr = [1, 2]
+		xuet n = len(arr)
+	}`)
+	assertContains(t, code, "xpp_array_len")
+}
+
+func TestBuiltinPush(t *testing.T) {
+	code := generate(t, `xuen main() {
+		xuet arr = [1, 2]
+		push(arr, 3)
+	}`)
+	assertContains(t, code, "xpp_array_push")
+	assertContains(t, code, "xpp_box_int")
+}
+
+func TestPrintMultipleArgs(t *testing.T) {
+	code := generate(t, `xuen main() { print("x", "y") }`)
+	// Multiple args should use non-newline prints with space separation
+	assertContains(t, code, "printf(\" \")")
+	assertContains(t, code, "printf(\"\\n\")")
+}
+
+func TestDeferStack(t *testing.T) {
+	code := generate(t, `xuen main() {}`)
+	// Main should initialize the defer stack
+	assertContains(t, code, "XppDeferStack")
+	assertContains(t, code, "xpp_defer_init")
+	assertContains(t, code, "xpp_defer_run_all")
+}
+
+func TestThrowExpression(t *testing.T) {
+	code := generate(t, `
+		xuen main() {
+			xutry {
+				xuthrow "boom"
+			} xucatch (e) {
+				print(e)
+			}
+		}
+	`)
+	assertContains(t, code, "xpp_throw")
+	assertContains(t, code, `"boom"`)
+}
+
+func TestMathBuiltins(t *testing.T) {
+	code := generate(t, `xuen main() {
+		xuet a = sqrt(4.0)
+		xuet b = abs(5)
+	}`)
+	assertContains(t, code, "xpp_math_sqrt")
+	assertContains(t, code, "xpp_math_abs")
+}
+
+func TestEnumCodegen(t *testing.T) {
+	code := generate(t, `
+		xuenum Color { Red Green Blue }
+		xuen main() {}
+	`)
+	assertContains(t, code, "enum Color")
+	assertContains(t, code, "Color_Red")
+	assertContains(t, code, "Color_Green")
+	assertContains(t, code, "Color_Blue")
+}
+
+func TestMethodForwardDecl(t *testing.T) {
+	code := generate(t, `
+		xuiruct Cat { name str }
+		xuimpl Cat { xuen meow(self) { print("meow") } }
+		xuen main() {}
+	`)
+	// Forward declaration should appear before implementation
+	assertContains(t, code, "xpp_Cat_meow(struct Cat *self);")
+	assertContains(t, code, "xpp_Cat_meow(struct Cat *self) {")
+}
+
+func TestLambdaPlaceholder(t *testing.T) {
+	code := generate(t, `xuen main() { xuet f = (x) => x }`)
+	// Lambda should be documented as a placeholder
+	assertContains(t, code, "lambda")
+	assertContains(t, code, "NULL")
+}
+
+func TestSleepBuiltin(t *testing.T) {
+	code := generate(t, `xuen main() { sleep(100) }`)
+	assertContains(t, code, "usleep")
+}
+
+func TestIndexOnArray(t *testing.T) {
+	code := generate(t, `xuen main() {
+		xuet arr = [10, 20, 30]
+		xuet x = arr[0]
+	}`)
+	assertContains(t, code, "xpp_array_get")
+	assertContains(t, code, "xpp_unbox_int")
+}
+
+func TestPrintFloat(t *testing.T) {
+	code := generate(t, `xuen main() { print(3.14) }`)
+	assertContains(t, code, "xpp_print_float(3.14)")
+}

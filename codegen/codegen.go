@@ -62,6 +62,13 @@ func (g *CCodegen) Generate(program *parser.Program) string {
 	}
 	g.writeln("")
 
+	// Emit enums
+	for _, stmt := range program.Statements {
+		if s, ok := stmt.(*parser.XuenumStatement); ok {
+			g.emitEnum(s)
+		}
+	}
+
 	// Emit structs
 	for _, stmt := range program.Statements {
 		if s, ok := stmt.(*parser.XuiructStatement); ok {
@@ -132,6 +139,8 @@ func (g *CCodegen) mapType(typeName string) string {
 		return "XppString*"
 	case "[]str":
 		return "XppArray*"
+	case "[]int":
+		return "XppArray*"
 	case "char":
 		return "char"
 	case "byte":
@@ -139,6 +148,18 @@ func (g *CCodegen) mapType(typeName string) string {
 	case "void", "":
 		return "void"
 	default:
+		// Check for array type prefix
+		if strings.HasPrefix(typeName, "[]") {
+			return "XppArray*"
+		}
+		// Check for channel type
+		if typeName == "channel" || typeName == "chan" {
+			return "XppChannel*"
+		}
+		// Check for map type
+		if strings.HasPrefix(typeName, "map[") {
+			return "XppMap*"
+		}
 		// Struct type
 		return "struct " + typeName
 	}
@@ -187,6 +208,23 @@ func (g *CCodegen) buildMethodParamList(structName string, params []parser.Param
 	return strings.Join(parts, ", ")
 }
 
+// --- Enum emission ---
+
+func (g *CCodegen) emitEnum(s *parser.XuenumStatement) {
+	g.writeln(fmt.Sprintf("enum %s {", s.Name))
+	g.indent++
+	for i, v := range s.Variants {
+		comma := ","
+		if i == len(s.Variants)-1 {
+			comma = ""
+		}
+		g.emitLine("%s_%s = %d%s", s.Name, v, i, comma)
+	}
+	g.indent--
+	g.writeln("};")
+	g.writeln("")
+}
+
 // --- Struct emission ---
 
 func (g *CCodegen) emitStruct(s *parser.XuiructStatement) {
@@ -210,6 +248,10 @@ func (g *CCodegen) emitFunction(fn *parser.XuenStatement) {
 	params := g.buildParamList(fn.Params)
 	g.writeln(fmt.Sprintf("%s xpp_%s(%s) {", retType, fn.Name, params))
 	g.indent++
+	// Register parameter types
+	for _, p := range fn.Params {
+		g.varTypes[p.Name] = g.mapType(p.TypeName)
+	}
 	g.emitBlock(fn.Body)
 	g.indent--
 	g.writeln("}")
@@ -222,6 +264,14 @@ func (g *CCodegen) emitImpl(s *parser.XuimplStatement) {
 		params := g.buildMethodParamList(s.Name, method.Params)
 		g.writeln(fmt.Sprintf("%s xpp_%s_%s(%s) {", retType, s.Name, method.Name, params))
 		g.indent++
+		// Register parameter types
+		for _, p := range method.Params {
+			if p.Name == "self" {
+				g.varTypes["self"] = "struct " + s.Name + " *"
+			} else {
+				g.varTypes[p.Name] = g.mapType(p.TypeName)
+			}
+		}
 		g.emitBlock(method.Body)
 		g.indent--
 		g.writeln("}")
@@ -240,7 +290,7 @@ func (g *CCodegen) emitMainWrapper(program *parser.Program) {
 		} else {
 			switch stmt.(type) {
 			case *parser.XuiructStatement, *parser.XuimplStatement, *parser.XuenumStatement,
-				*parser.XuenStatement, *parser.XuimportStatement:
+				*parser.XuenStatement, *parser.XuimportStatement, *parser.XuinterfaceStatement:
 				// Skip declarations — already emitted
 			default:
 				topLevel = append(topLevel, stmt)
@@ -250,6 +300,10 @@ func (g *CCodegen) emitMainWrapper(program *parser.Program) {
 
 	g.writeln("int main(void) {")
 	g.indent++
+
+	// Initialize defer stack for main scope
+	g.emitLine("XppDeferStack _defer_stack;")
+	g.emitLine("xpp_defer_init(&_defer_stack);")
 
 	// Emit top-level statements
 	for _, stmt := range topLevel {
@@ -261,6 +315,8 @@ func (g *CCodegen) emitMainWrapper(program *parser.Program) {
 		g.emitBlock(mainFn.Body)
 	}
 
+	// Run deferred calls before exiting
+	g.emitLine("xpp_defer_run_all(&_defer_stack);")
 	g.emitLine("return 0;")
 	g.indent--
 	g.writeln("}")
@@ -292,12 +348,18 @@ func (g *CCodegen) emitStatement(stmt parser.Statement) {
 		g.emitXuif(s)
 	case *parser.XuiorStatement:
 		g.emitXuior(s)
+	case *parser.XuiorClassicStatement:
+		g.emitXuiorClassic(s)
 	case *parser.XuileStatement:
 		g.emitXuile(s)
 	case *parser.XuiatchStatement:
 		g.emitXuiatch(s)
 	case *parser.TryStatement:
 		g.emitTry(s)
+	case *parser.XudeferStatement:
+		g.emitDefer(s)
+	case *parser.XuselectStatement:
+		g.emitSelect(s)
 	case *parser.ExpressionStatement:
 		g.writeIndent()
 		g.emitExpression(s.Expr)
@@ -386,18 +448,53 @@ func (g *CCodegen) emitXuior(s *parser.XuiorStatement) {
 		g.emitExpression(rng.End)
 		g.write(fmt.Sprintf("; %s++", s.Variable))
 		g.writeln(") {")
-	} else {
-		// For array iteration, generate indexed loop
-		tmp := g.newTemp()
-		g.writeIndent()
-		g.write(fmt.Sprintf("for (int64_t %s = 0; %s < /* len */; %s++", tmp, tmp, tmp))
-		g.writeln(") {")
 		g.indent++
-		g.emitLine("// TODO: array iteration")
+		g.emitBlock(s.Body)
 		g.indent--
+		g.emitLine("}")
+	} else {
+		// Array iteration using XppArray runtime
+		tmpArr := g.newTemp()
+		tmpIdx := g.newTemp()
+		g.writeIndent()
+		g.writeln("{")
+		g.indent++
+		g.writeIndent()
+		g.write(fmt.Sprintf("XppArray* %s = ", tmpArr))
+		g.emitExpression(s.Iterable)
+		g.writeln(";")
+		g.writeIndent()
+		g.write(fmt.Sprintf("for (int64_t %s = 0; %s < xpp_array_len(%s); %s++)", tmpIdx, tmpIdx, tmpArr, tmpIdx))
+		g.writeln(" {")
+		g.indent++
+		g.emitLine("int64_t %s = xpp_unbox_int(xpp_array_get(%s, %s));", s.Variable, tmpArr, tmpIdx)
+		g.emitBlock(s.Body)
+		g.indent--
+		g.emitLine("}")
+		g.indent--
+		g.emitLine("}")
 	}
+}
+
+func (g *CCodegen) emitXuiorClassic(s *parser.XuiorClassicStatement) {
+	g.writeIndent()
+	g.writeln("{")
+	g.indent++
+	// Emit init as statement
+	if s.Init != nil {
+		g.emitStatement(s.Init)
+	}
+	g.writeIndent()
+	g.write("while (")
+	g.emitExpression(s.Condition)
+	g.writeln(") {")
 	g.indent++
 	g.emitBlock(s.Body)
+	if s.Post != nil {
+		g.emitStatement(s.Post)
+	}
+	g.indent--
+	g.emitLine("}")
 	g.indent--
 	g.emitLine("}")
 }
@@ -435,8 +532,7 @@ func (g *CCodegen) emitXuiatch(s *parser.XuiatchStatement) {
 				g.write("if (")
 			}
 			// Use xpp_string_eq for string patterns, == for integers
-			if _, ok := arm.Pattern.(*parser.StringLiteral); ok {
-				sl := arm.Pattern.(*parser.StringLiteral)
+			if sl, ok := arm.Pattern.(*parser.StringLiteral); ok {
 				g.write("xpp_string_eq(")
 				g.emitExpression(s.Value)
 				g.write(fmt.Sprintf(", xpp_string_new(%q))", sl.Value))
@@ -483,6 +579,49 @@ func (g *CCodegen) emitTry(s *parser.TryStatement) {
 	g.emitLine("}")
 }
 
+func (g *CCodegen) emitDefer(s *parser.XudeferStatement) {
+	// Defer requires closures for full support. Emit as a comment
+	// documenting the deferred call, since C does not support arbitrary
+	// closures. The defer stack is initialized but only usable with
+	// function-pointer-based deferred actions.
+	g.writeIndent()
+	g.write("/* xudefer: ")
+	g.emitExpression(s.Call)
+	g.writeln(" */")
+}
+
+func (g *CCodegen) emitSelect(s *parser.XuselectStatement) {
+	// xuselect with channel cases. Generate as if/else chain checking
+	// which channel is ready (simplified: first non-default case wins).
+	g.emitLine("/* xuselect */")
+	g.emitLine("{")
+	g.indent++
+	for i, c := range s.Cases {
+		if c.IsDefault {
+			if i > 0 {
+				g.emitLine("} else {")
+			} else {
+				g.emitLine("{")
+			}
+		} else {
+			g.writeIndent()
+			if i > 0 {
+				g.write("} else if (")
+			} else {
+				g.write("if (")
+			}
+			g.emitExpression(c.Channel)
+			g.writeln(") {")
+		}
+		g.indent++
+		g.emitBlock(c.Body)
+		g.indent--
+	}
+	g.emitLine("}")
+	g.indent--
+	g.emitLine("}")
+}
+
 // --- Expression emission ---
 
 func (g *CCodegen) emitExpression(expr parser.Expression) {
@@ -490,7 +629,7 @@ func (g *CCodegen) emitExpression(expr parser.Expression) {
 	case *parser.IntegerLiteral:
 		g.write(fmt.Sprintf("%dLL", e.Value))
 	case *parser.FloatLiteral:
-		g.write(fmt.Sprintf("%s", e.Raw))
+		g.write(e.Raw)
 	case *parser.StringLiteral:
 		g.write(fmt.Sprintf("xpp_string_new(%q)", e.Value))
 	case *parser.CharLiteral:
@@ -517,19 +656,9 @@ func (g *CCodegen) emitExpression(expr parser.Expression) {
 	case *parser.MemberExpression:
 		g.emitMember(e)
 	case *parser.IndexExpression:
-		g.emitExpression(e.Left)
-		g.write("[")
-		g.emitExpression(e.Index)
-		g.write("]")
+		g.emitIndex(e)
 	case *parser.ArrayLiteral:
-		g.write("{")
-		for i, elem := range e.Elements {
-			if i > 0 {
-				g.write(", ")
-			}
-			g.emitExpression(elem)
-		}
-		g.write("}")
+		g.emitArrayLiteral(e)
 	case *parser.RangeExpression:
 		// Range as expression — just emit start (used in for loops directly)
 		g.emitExpression(e.Start)
@@ -612,36 +741,258 @@ func (g *CCodegen) emitInfix(e *parser.InfixExpression) {
 func (g *CCodegen) emitCall(e *parser.CallExpression) {
 	// Method call: obj.method(args)
 	if member, ok := e.Function.(*parser.MemberExpression); ok {
-		// Get struct type from member object
-		if ident, ok := member.Object.(*parser.Identifier); ok {
-			if def, exists := g.structDefs[ident.Value]; exists {
-				_ = def
-			}
-		}
-		// Emit as: xpp_StructName_method(&obj, args...)
-		g.write("xpp_")
-		// For simplicity, just emit the method call pattern
-		g.emitExpression(member.Object)
-		g.write("_")
-		g.write(member.Member)
-		g.write("(")
-		g.write("&")
-		g.emitExpression(member.Object)
-		for _, arg := range e.Arguments {
-			g.write(", ")
-			g.emitExpression(arg)
-		}
-		g.write(")")
+		g.emitMethodCall(member, e.Arguments)
 		return
 	}
 
 	// Regular function call
 	if ident, ok := e.Function.(*parser.Identifier); ok {
-		// Map print to appropriate C function
-		if ident.Value == "print" || ident.Value == "println" {
+		// Built-in function dispatch
+		switch ident.Value {
+		case "print", "println":
 			g.emitPrintCall(e.Arguments)
 			return
+		case "channel":
+			g.write("xpp_channel_new()")
+			return
+		case "send":
+			if len(e.Arguments) >= 2 {
+				g.write("xpp_channel_send(")
+				g.emitExpression(e.Arguments[0])
+				g.write(", xpp_box_int(")
+				g.emitExpression(e.Arguments[1])
+				g.write("))")
+			}
+			return
+		case "recv":
+			if len(e.Arguments) >= 1 {
+				g.write("xpp_unbox_int(xpp_channel_recv(")
+				g.emitExpression(e.Arguments[0])
+				g.write("))")
+			}
+			return
+		case "spawn":
+			g.write("/* spawn: requires closure support */ (void)0")
+			return
+		case "sleep":
+			if len(e.Arguments) >= 1 {
+				g.write("usleep((unsigned int)(")
+				g.emitExpression(e.Arguments[0])
+				g.write(") * 1000)")
+			}
+			return
+		case "len":
+			if len(e.Arguments) >= 1 {
+				arg := e.Arguments[0]
+				if ident2, ok := arg.(*parser.Identifier); ok {
+					if t, exists := g.varTypes[ident2.Value]; exists {
+						if t == "XppString*" {
+							g.write("xpp_string_len(")
+							g.emitExpression(arg)
+							g.write(")")
+							return
+						}
+						if t == "XppMap*" {
+							g.write("xpp_map_len(")
+							g.emitExpression(arg)
+							g.write(")")
+							return
+						}
+					}
+				}
+				g.write("xpp_array_len(")
+				g.emitExpression(arg)
+				g.write(")")
+			}
+			return
+		case "push", "append":
+			if len(e.Arguments) >= 2 {
+				g.write("xpp_array_push(")
+				g.emitExpression(e.Arguments[0])
+				g.write(", xpp_box_int(")
+				g.emitExpression(e.Arguments[1])
+				g.write("))")
+			}
+			return
+		case "pop":
+			if len(e.Arguments) >= 1 {
+				g.write("xpp_unbox_int(xpp_array_pop(")
+				g.emitExpression(e.Arguments[0])
+				g.write("))")
+			}
+			return
+		case "read_line":
+			g.write("xpp_read_line()")
+			return
+		case "parse_int":
+			if len(e.Arguments) >= 1 {
+				g.write("xpp_parse_int(")
+				g.emitExpression(e.Arguments[0])
+				g.write(")")
+			}
+			return
+		case "parse_float":
+			if len(e.Arguments) >= 1 {
+				g.write("xpp_parse_float(")
+				g.emitExpression(e.Arguments[0])
+				g.write(")")
+			}
+			return
+		case "int_to_float":
+			if len(e.Arguments) >= 1 {
+				g.write("xpp_int_to_float(")
+				g.emitExpression(e.Arguments[0])
+				g.write(")")
+			}
+			return
+		case "float_to_int":
+			if len(e.Arguments) >= 1 {
+				g.write("xpp_float_to_int(")
+				g.emitExpression(e.Arguments[0])
+				g.write(")")
+			}
+			return
+		case "to_string":
+			if len(e.Arguments) >= 1 {
+				arg := e.Arguments[0]
+				if ident2, ok := arg.(*parser.Identifier); ok {
+					if t, exists := g.varTypes[ident2.Value]; exists {
+						switch t {
+						case "double":
+							g.write("xpp_string_from_float(")
+							g.emitExpression(arg)
+							g.write(")")
+							return
+						case "bool":
+							g.write("xpp_string_from_bool(")
+							g.emitExpression(arg)
+							g.write(")")
+							return
+						case "char":
+							g.write("xpp_string_from_char(")
+							g.emitExpression(arg)
+							g.write(")")
+							return
+						}
+					}
+				}
+				g.write("xpp_string_from_int(")
+				g.emitExpression(arg)
+				g.write(")")
+			}
+			return
+		case "sqrt":
+			if len(e.Arguments) >= 1 {
+				g.write("xpp_math_sqrt(")
+				g.emitExpression(e.Arguments[0])
+				g.write(")")
+			}
+			return
+		case "pow":
+			if len(e.Arguments) >= 2 {
+				g.write("xpp_math_pow(")
+				g.emitExpression(e.Arguments[0])
+				g.write(", ")
+				g.emitExpression(e.Arguments[1])
+				g.write(")")
+			}
+			return
+		case "floor":
+			if len(e.Arguments) >= 1 {
+				g.write("xpp_math_floor(")
+				g.emitExpression(e.Arguments[0])
+				g.write(")")
+			}
+			return
+		case "ceil":
+			if len(e.Arguments) >= 1 {
+				g.write("xpp_math_ceil(")
+				g.emitExpression(e.Arguments[0])
+				g.write(")")
+			}
+			return
+		case "abs":
+			if len(e.Arguments) >= 1 {
+				g.write("xpp_math_abs(")
+				g.emitExpression(e.Arguments[0])
+				g.write(")")
+			}
+			return
+		case "min":
+			if len(e.Arguments) >= 2 {
+				g.write("xpp_math_min(")
+				g.emitExpression(e.Arguments[0])
+				g.write(", ")
+				g.emitExpression(e.Arguments[1])
+				g.write(")")
+			}
+			return
+		case "max":
+			if len(e.Arguments) >= 2 {
+				g.write("xpp_math_max(")
+				g.emitExpression(e.Arguments[0])
+				g.write(", ")
+				g.emitExpression(e.Arguments[1])
+				g.write(")")
+			}
+			return
+		case "map_new":
+			g.write("xpp_map_new()")
+			return
+		case "map_set":
+			if len(e.Arguments) >= 3 {
+				g.write("xpp_map_set(")
+				g.emitExpression(e.Arguments[0])
+				g.write(", ")
+				// Key as C string
+				if sl, ok := e.Arguments[1].(*parser.StringLiteral); ok {
+					g.write(fmt.Sprintf("%q", sl.Value))
+				} else {
+					g.emitExpression(e.Arguments[1])
+					g.write("->data")
+				}
+				g.write(", xpp_box_int(")
+				g.emitExpression(e.Arguments[2])
+				g.write("))")
+			}
+			return
+		case "map_get":
+			if len(e.Arguments) >= 2 {
+				g.write("xpp_unbox_int(xpp_map_get(")
+				g.emitExpression(e.Arguments[0])
+				g.write(", ")
+				if sl, ok := e.Arguments[1].(*parser.StringLiteral); ok {
+					g.write(fmt.Sprintf("%q", sl.Value))
+				} else {
+					g.emitExpression(e.Arguments[1])
+					g.write("->data")
+				}
+				g.write("))")
+			}
+			return
+		case "map_has":
+			if len(e.Arguments) >= 2 {
+				g.write("xpp_map_has(")
+				g.emitExpression(e.Arguments[0])
+				g.write(", ")
+				if sl, ok := e.Arguments[1].(*parser.StringLiteral); ok {
+					g.write(fmt.Sprintf("%q", sl.Value))
+				} else {
+					g.emitExpression(e.Arguments[1])
+					g.write("->data")
+				}
+				g.write(")")
+			}
+			return
+		case "channel_close":
+			if len(e.Arguments) >= 1 {
+				g.write("xpp_channel_close(")
+				g.emitExpression(e.Arguments[0])
+				g.write(")")
+			}
+			return
 		}
+
 		// User functions get xpp_ prefix
 		g.write("xpp_" + ident.Value)
 	} else {
@@ -653,6 +1004,36 @@ func (g *CCodegen) emitCall(e *parser.CallExpression) {
 		if i > 0 {
 			g.write(", ")
 		}
+		g.emitExpression(arg)
+	}
+	g.write(")")
+}
+
+func (g *CCodegen) emitMethodCall(member *parser.MemberExpression, args []parser.Expression) {
+	// Look up the struct type from varTypes for the object
+	if ident, ok := member.Object.(*parser.Identifier); ok {
+		structType := ""
+		if t, exists := g.varTypes[ident.Value]; exists {
+			// Strip "struct " prefix if present to get the name
+			structType = strings.TrimPrefix(t, "struct ")
+		}
+		if structType != "" && g.implDefs[structType] != nil {
+			// Known struct with methods: emit xpp_StructName_method(&obj, ...)
+			g.write(fmt.Sprintf("xpp_%s_%s(&%s", structType, member.Member, ident.Value))
+			for _, arg := range args {
+				g.write(", ")
+				g.emitExpression(arg)
+			}
+			g.write(")")
+			return
+		}
+	}
+
+	// Fallback: emit as a plain method-like call xpp_method(object, ...)
+	g.write(fmt.Sprintf("xpp_%s(", member.Member))
+	g.emitExpression(member.Object)
+	for _, arg := range args {
+		g.write(", ")
 		g.emitExpression(arg)
 	}
 	g.write(")")
@@ -681,21 +1062,55 @@ func (g *CCodegen) emitPrintCall(args []parser.Expression) {
 				g.write("xpp_print_bool(false)")
 			}
 		case *parser.Identifier:
-			if t, ok := g.varTypes[e.Value]; ok && t == "XppString*" {
-				g.write(fmt.Sprintf("xpp_print_string(%s)", e.Value))
-			} else if t == "double" {
-				g.write(fmt.Sprintf("xpp_print_float(%s)", e.Value))
-			} else if t == "bool" {
-				g.write(fmt.Sprintf("xpp_print_bool(%s)", e.Value))
-			} else if t == "char" {
-				g.write(fmt.Sprintf("xpp_print_char(%s)", e.Value))
+			if t, ok := g.varTypes[e.Value]; ok {
+				switch t {
+				case "XppString*":
+					g.write(fmt.Sprintf("xpp_print_string(%s)", e.Value))
+				case "double":
+					g.write(fmt.Sprintf("xpp_print_float(%s)", e.Value))
+				case "bool":
+					g.write(fmt.Sprintf("xpp_print_bool(%s)", e.Value))
+				case "char":
+					g.write(fmt.Sprintf("xpp_print_char(%s)", e.Value))
+				case "XppArray*":
+					g.write(fmt.Sprintf("xpp_print_string(xpp_string_from_int(xpp_array_len(%s)))", e.Value))
+				case "XppMap*":
+					g.write(fmt.Sprintf("xpp_print_string(xpp_string_from_int(xpp_map_len(%s)))", e.Value))
+				case "XppChannel*":
+					g.write("xpp_print_cstr(\"<channel>\")")
+				default:
+					g.write(fmt.Sprintf("xpp_print_int(%s)", e.Value))
+				}
 			} else {
 				g.write(fmt.Sprintf("xpp_print_int(%s)", e.Value))
 			}
 		case *parser.InterpolatedString:
-			g.emitPrintInterpolated(e)
+			g.write("xpp_print_string(")
+			g.emitInterpolatedString(e)
+			g.write(")")
+		case *parser.CallExpression:
+			// Check if the call returns a string type
+			if g.isStringTypedExpr(arg) {
+				g.write("xpp_print_string(")
+				g.emitExpression(arg)
+				g.write(")")
+			} else {
+				g.write("xpp_print_int(")
+				g.emitExpression(arg)
+				g.write(")")
+			}
+		case *parser.InfixExpression:
+			if g.isStringTypedExpr(arg) {
+				g.write("xpp_print_string(")
+				g.emitExpression(arg)
+				g.write(")")
+			} else {
+				g.write("xpp_print_int(")
+				g.emitExpression(arg)
+				g.write(")")
+			}
 		default:
-			// Check if the expression looks like a string type
+			// Default: check if string typed, otherwise int
 			if g.isStringTypedExpr(arg) {
 				g.write("xpp_print_string(")
 				g.emitExpression(arg)
@@ -709,102 +1124,57 @@ func (g *CCodegen) emitPrintCall(args []parser.Expression) {
 		return
 	}
 
-	// Multiple args: print space-separated, detect types
-	g.write(`printf("`)
+	// Multiple args: print space-separated using nonl helpers, then newline
 	for i, arg := range args {
 		if i > 0 {
-			g.write(" ")
+			g.write("; printf(\" \"); ")
 		}
-		g.write(g.printfFormatFor(arg))
+		g.emitPrintSingleNoNl(arg)
 	}
-	g.write(`\n"`)
-	for _, arg := range args {
-		g.write(", ")
-		g.emitPrintArg(arg)
-	}
-	g.write(")")
+	g.write("; printf(\"\\n\")")
 }
 
-func (g *CCodegen) printfFormatFor(arg parser.Expression) string {
-	switch arg.(type) {
-	case *parser.StringLiteral:
-		return "%s"
-	case *parser.FloatLiteral:
-		return "%f"
-	case *parser.BoolLiteral:
-		return "%s"
-	}
-	if ident, ok := arg.(*parser.Identifier); ok {
-		if t, ok := g.varTypes[ident.Value]; ok {
-			switch t {
-			case "XppString":
-				return "%s"
-			case "double":
-				return "%f"
-			case "bool":
-				return "%s"
-			}
-		}
-	}
-	return "%lld"
-}
-
-func (g *CCodegen) emitPrintArg(arg parser.Expression) {
+// emitPrintSingleNoNl emits a single print call WITHOUT a trailing newline
+func (g *CCodegen) emitPrintSingleNoNl(arg parser.Expression) {
 	switch e := arg.(type) {
 	case *parser.StringLiteral:
-		g.write(fmt.Sprintf("xpp_string_new(%q)->data", e.Value))
+		g.write(fmt.Sprintf("xpp_print_string_nonl(xpp_string_new(%q))", e.Value))
+	case *parser.IntegerLiteral:
+		g.write(fmt.Sprintf("xpp_print_int_nonl(%dLL)", e.Value))
+	case *parser.FloatLiteral:
+		g.write(fmt.Sprintf("xpp_print_float_nonl(%s)", e.Raw))
 	case *parser.BoolLiteral:
 		if e.Value {
-			g.write(`"xuitru"`)
+			g.write("xpp_print_bool_nonl(true)")
 		} else {
-			g.write(`"xuinia"`)
+			g.write("xpp_print_bool_nonl(false)")
 		}
 	case *parser.Identifier:
 		if t, ok := g.varTypes[e.Value]; ok {
-			if t == "bool" {
-				g.write(fmt.Sprintf(`%s ? "xuitru" : "xuinia"`, e.Value))
-				return
+			switch t {
+			case "XppString*":
+				g.write(fmt.Sprintf("xpp_print_string_nonl(%s)", e.Value))
+			case "double":
+				g.write(fmt.Sprintf("xpp_print_float_nonl(%s)", e.Value))
+			case "bool":
+				g.write(fmt.Sprintf("xpp_print_bool_nonl(%s)", e.Value))
+			default:
+				g.write(fmt.Sprintf("xpp_print_int_nonl(%s)", e.Value))
 			}
-			if t == "XppString*" {
-				g.write(fmt.Sprintf("%s->data", e.Value))
-				return
-			}
-			if t == "double" {
-				g.write(e.Value)
-				return
-			}
-		}
-		g.write(fmt.Sprintf("(long long)%s", e.Value))
-	default:
-		g.write("(long long)")
-		g.emitExpression(arg)
-	}
-}
-
-func (g *CCodegen) emitPrintInterpolated(e *parser.InterpolatedString) {
-	// Build printf format string and args from interpolated parts
-	g.write(`printf("`)
-	for _, part := range e.Parts {
-		if _, ok := part.(*parser.StringLiteral); ok {
-			sl := part.(*parser.StringLiteral)
-			// Escape % in format string
-			escaped := strings.ReplaceAll(sl.Value, "%", "%%")
-			escaped = strings.ReplaceAll(escaped, "\\", "\\\\")
-			escaped = strings.ReplaceAll(escaped, "\"", "\\\"")
-			g.write(escaped)
 		} else {
-			g.write(g.printfFormatFor(part))
+			g.write(fmt.Sprintf("xpp_print_int_nonl(%s)", e.Value))
+		}
+	default:
+		if g.isStringTypedExpr(arg) {
+			g.write("xpp_print_string_nonl(")
+			g.emitExpression(arg)
+			g.write(")")
+		} else {
+			g.write("xpp_print_int_nonl(")
+			g.emitExpression(arg)
+			g.write(")")
 		}
 	}
-	g.write(`\n"`)
-	for _, part := range e.Parts {
-		if _, ok := part.(*parser.StringLiteral); ok {
-			continue
-		}
-		g.write(", ")
-		g.emitPrintArg(part)
-	}
-	g.write(")")
 }
 
 func (g *CCodegen) isStringTypedExpr(expr parser.Expression) bool {
@@ -817,7 +1187,7 @@ func (g *CCodegen) isStringTypedExpr(expr parser.Expression) bool {
 		}
 	}
 	if infix, ok := expr.(*parser.InfixExpression); ok {
-		if infix.Operator == "+" && (isStringExpr(infix.Left) || isStringExpr(infix.Right)) {
+		if infix.Operator == "+" && (g.isStringTypedExpr(infix.Left) || g.isStringTypedExpr(infix.Right)) {
 			return true
 		}
 	}
@@ -833,45 +1203,164 @@ func (g *CCodegen) emitMember(e *parser.MemberExpression) {
 	g.write(e.Member)
 }
 
+func (g *CCodegen) emitIndex(e *parser.IndexExpression) {
+	// Check if the indexed object is a known array type
+	if ident, ok := e.Left.(*parser.Identifier); ok {
+		if t, exists := g.varTypes[ident.Value]; exists {
+			if t == "XppArray*" {
+				g.write("xpp_unbox_int(xpp_array_get(")
+				g.emitExpression(e.Left)
+				g.write(", ")
+				g.emitExpression(e.Index)
+				g.write("))")
+				return
+			}
+			if t == "XppString*" {
+				g.write("xpp_string_char_at(")
+				g.emitExpression(e.Left)
+				g.write(", ")
+				g.emitExpression(e.Index)
+				g.write(")")
+				return
+			}
+		}
+	}
+	// Fallback: C-style index
+	g.emitExpression(e.Left)
+	g.write("[")
+	g.emitExpression(e.Index)
+	g.write("]")
+}
+
+func (g *CCodegen) emitArrayLiteral(e *parser.ArrayLiteral) {
+	if len(e.Elements) == 0 {
+		g.write("xpp_array_new(0)")
+		return
+	}
+	// Use GCC statement expression ({...}) for inline array construction
+	tmp := g.newTemp()
+	g.write("({")
+	g.write(fmt.Sprintf(" XppArray* %s = xpp_array_new(%d);", tmp, len(e.Elements)))
+	for _, elem := range e.Elements {
+		g.write(fmt.Sprintf(" xpp_array_push(%s, xpp_box_int(", tmp))
+		g.emitExpression(elem)
+		g.write("));")
+	}
+	g.write(fmt.Sprintf(" %s; })", tmp))
+}
+
 func (g *CCodegen) emitMapLiteral(e *parser.MapLiteral) {
-	// Maps are emitted as a comment + NULL placeholder since C has no native map type.
-	// A real implementation would use a hash table library.
-	g.write("/* map literal */ NULL")
+	if len(e.Pairs) == 0 {
+		g.write("xpp_map_new()")
+		return
+	}
+	// Use GCC statement expression ({...}) for inline map construction
+	tmp := g.newTemp()
+	g.write("({")
+	g.write(fmt.Sprintf(" XppMap* %s = xpp_map_new();", tmp))
+	for _, pair := range e.Pairs {
+		g.write(fmt.Sprintf(" xpp_map_set(%s, ", tmp))
+		// Key must be a C string (const char*)
+		if sl, ok := pair.Key.(*parser.StringLiteral); ok {
+			g.write(fmt.Sprintf("%q", sl.Value))
+		} else {
+			// Evaluate the key expression and get ->data
+			g.write("(")
+			g.emitExpression(pair.Key)
+			g.write(")->data")
+		}
+		g.write(", xpp_box_int(")
+		g.emitExpression(pair.Value)
+		g.write("));")
+	}
+	g.write(fmt.Sprintf(" %s; })", tmp))
 }
 
 func (g *CCodegen) emitInterpolatedString(e *parser.InterpolatedString) {
-	// For interpolated strings used as values, concatenate the string parts.
-	// Full support would require snprintf; for now emit the first string literal
-	// or a placeholder.
-	if len(e.Parts) == 1 {
-		g.emitExpression(e.Parts[0])
+	if len(e.Parts) == 0 {
+		g.write(`xpp_string_new("")`)
 		return
 	}
-	// Multiple parts: emit concatenation of string parts
-	// For simplicity, just emit the literal parts joined
-	g.write(`"`)
-	for _, part := range e.Parts {
-		if sl, ok := part.(*parser.StringLiteral); ok {
-			escaped := strings.ReplaceAll(sl.Value, "\"", "\\\"")
-			g.write(escaped)
+	if len(e.Parts) == 1 {
+		g.emitStringPart(e.Parts[0])
+		return
+	}
+	// Build nested xpp_string_concat calls from left to right:
+	// For 3 parts: xpp_string_concat(xpp_string_concat(p0, p1), p2)
+	for i := 1; i < len(e.Parts); i++ {
+		g.write("xpp_string_concat(")
+	}
+	g.emitStringPart(e.Parts[0])
+	for i := 1; i < len(e.Parts); i++ {
+		g.write(", ")
+		g.emitStringPart(e.Parts[i])
+		g.write(")")
+	}
+}
+
+// emitStringPart emits a single part of an interpolated string as an XppString*
+func (g *CCodegen) emitStringPart(expr parser.Expression) {
+	switch e := expr.(type) {
+	case *parser.StringLiteral:
+		g.write(fmt.Sprintf("xpp_string_new(%q)", e.Value))
+	case *parser.IntegerLiteral:
+		g.write(fmt.Sprintf("xpp_string_from_int(%dLL)", e.Value))
+	case *parser.FloatLiteral:
+		g.write(fmt.Sprintf("xpp_string_from_float(%s)", e.Raw))
+	case *parser.BoolLiteral:
+		if e.Value {
+			g.write("xpp_string_from_bool(true)")
 		} else {
-			g.write("%s") // placeholder for non-literal parts
+			g.write("xpp_string_from_bool(false)")
+		}
+	case *parser.Identifier:
+		if typ, ok := g.varTypes[e.Value]; ok {
+			switch typ {
+			case "XppString*":
+				g.write(e.Value)
+			case "double":
+				g.write(fmt.Sprintf("xpp_string_from_float(%s)", e.Value))
+			case "bool":
+				g.write(fmt.Sprintf("xpp_string_from_bool(%s)", e.Value))
+			case "char":
+				g.write(fmt.Sprintf("xpp_string_from_char(%s)", e.Value))
+			default:
+				g.write(fmt.Sprintf("xpp_string_from_int(%s)", e.Value))
+			}
+		} else {
+			g.write(fmt.Sprintf("xpp_string_from_int(%s)", e.Value))
+		}
+	default:
+		// Wrap expression in string conversion
+		if g.isStringTypedExpr(expr) {
+			g.emitExpression(expr)
+		} else {
+			g.write("xpp_string_from_int((int64_t)(")
+			g.emitExpression(expr)
+			g.write("))")
 		}
 	}
-	g.write(`"`)
 }
 
 func (g *CCodegen) emitLambda(e *parser.LambdaExpression) {
-	// C doesn't have lambdas natively. Emit as a function pointer comment + NULL.
-	// For GCC/Clang with blocks or nested functions, we could do more.
-	g.write("/* lambda */ NULL")
+	// C doesn't support closures natively. For GCC we could use nested
+	// functions, but portability is poor. Emit as a documented placeholder.
+	g.write("/* lambda: requires closure support */ NULL")
 }
 
 func (g *CCodegen) emitThrow(e *parser.ThrowExpression) {
-	// Set the global error flag and message
-	g.write("(_xpp_has_error = 1, _xpp_error_msg = ")
-	g.emitExpression(e.Value)
-	g.write(")")
+	// Set the global error flag and message.
+	// If the value is a string literal, extract its data for the C string.
+	// Otherwise use the raw C string expression.
+	g.write("(xpp_throw(")
+	if sl, ok := e.Value.(*parser.StringLiteral); ok {
+		g.write(fmt.Sprintf("%q", sl.Value))
+	} else {
+		g.write("(")
+		g.emitExpression(e.Value)
+		g.write(")->data")
+	}
+	g.write("), (void)0)")
 }
 
 // --- Helpers ---
@@ -892,42 +1381,69 @@ func (g *CCodegen) inferCType(expr parser.Expression, declaredType string) strin
 	case *parser.CharLiteral:
 		return "char"
 	case *parser.ArrayLiteral:
-		return "int64_t*" // simplified
+		return "XppArray*"
+	case *parser.MapLiteral:
+		return "XppMap*"
 	case *parser.StructLiteral:
 		return "struct " + e.Name
 	case *parser.InfixExpression:
-		if e.Operator == "+" && (isStringExpr(e.Left) || isStringExpr(e.Right)) {
+		if e.Operator == "+" && (g.isStringTypedExpr(e.Left) || g.isStringTypedExpr(e.Right)) {
 			return "XppString*"
 		}
-		// Check if either side is a known string variable
-		if e.Operator == "+" {
-			if ident, ok := e.Left.(*parser.Identifier); ok {
-				if g.varTypes[ident.Value] == "XppString" {
-					return "XppString*"
-				}
-			}
-			if ident, ok := e.Right.(*parser.Identifier); ok {
-				if g.varTypes[ident.Value] == "XppString" {
-					return "XppString*"
-				}
-			}
+		// Check if either side is a float
+		if g.isFloatTypedExpr(e.Left) || g.isFloatTypedExpr(e.Right) {
+			return "double"
 		}
 		return "int64_t"
 	case *parser.InterpolatedString:
 		return "XppString*"
 	case *parser.CallExpression:
+		// Infer type from known built-in functions
+		if ident, ok := e.Function.(*parser.Identifier); ok {
+			switch ident.Value {
+			case "channel":
+				return "XppChannel*"
+			case "recv":
+				return "int64_t"
+			case "len":
+				return "int64_t"
+			case "read_line", "to_string":
+				return "XppString*"
+			case "parse_int", "float_to_int", "abs", "min", "max":
+				return "int64_t"
+			case "parse_float", "int_to_float", "sqrt", "pow", "floor", "ceil":
+				return "double"
+			case "map_new":
+				return "XppMap*"
+			case "map_has":
+				return "bool"
+			}
+		}
 		return "int64_t"
 	case *parser.Identifier:
 		if t, ok := g.varTypes[e.Value]; ok {
 			return t
 		}
 		return "int64_t"
+	case *parser.NullLiteral:
+		return "void*"
 	}
 	return "int64_t" // default
+}
+
+func (g *CCodegen) isFloatTypedExpr(expr parser.Expression) bool {
+	if _, ok := expr.(*parser.FloatLiteral); ok {
+		return true
+	}
+	if ident, ok := expr.(*parser.Identifier); ok {
+		if t, ok := g.varTypes[ident.Value]; ok {
+			return t == "double"
+		}
+	}
+	return false
 }
 
 func isStringExpr(expr parser.Expression) bool {
 	_, ok := expr.(*parser.StringLiteral)
 	return ok
 }
-
