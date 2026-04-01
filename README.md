@@ -17,6 +17,12 @@ go run . build examples/fibonacci.xpp
 # Interactive REPL
 go run . repl
 
+# Format code
+go run . fmt myfile.xpp
+
+# Start LSP server (for editor integration)
+go run . lsp
+
 # Show version
 go run . version
 ```
@@ -71,6 +77,28 @@ xuiatch (status) {
 // Arrays
 xuet nums = [1, 2, 3, 4, 5]
 
+// Maps
+xuet scores = {"alice": 90, "bob": 85}
+print(scores["alice"])
+
+// String interpolation
+xuet name = "World"
+print("Hello {name}! 2+2={2+2}")
+
+// Lambda functions
+xuet add = (a, b) => a + b
+xuet square = (n) => n * n
+
+// Error handling
+xutry {
+    xuthrow "something went wrong"
+} xucatch (e) {
+    print("caught: " + e)
+}
+
+// Multi-file imports
+xuimport "mylib"
+
 // Enums
 xuenum Direction {
     Up
@@ -94,6 +122,8 @@ xuenum Direction {
 | `xuin` | in | `xuimport` | import |
 | `xuitru` | true | `xuiub` | pub |
 | `xuinia` | false | `xuinull` | null |
+| `xutry` | try | `xucatch` | catch |
+| `xuthrow` | throw | | |
 
 ## Types
 

@@ -18,6 +18,8 @@ func Execute(args []string) error {
 		return runRepl()
 	case "fmt":
 		return runFmt(args[1:])
+	case "lsp":
+		return runLsp()
 	case "version":
 		return runVersion()
 	case "help":

@@ -1,0 +1,24 @@
+{
+    "name": "xuesos-plus-plus",
+    "displayName": "Xuesos++",
+    "description": "Language support for Xuesos++ programming language",
+    "version": "0.1.0",
+    "publisher": "xuesos",
+    "engines": {
+        "vscode": "^1.80.0"
+    },
+    "categories": ["Programming Languages"],
+    "contributes": {
+        "languages": [{
+            "id": "xuesos",
+            "aliases": ["Xuesos++", "xuesos"],
+            "extensions": [".xpp"],
+            "configuration": "./language-configuration.json"
+        }],
+        "grammars": [{
+            "language": "xuesos",
+            "scopeName": "source.xuesos",
+            "path": "./syntaxes/xuesos.tmLanguage.json"
+        }]
+    }
+}
