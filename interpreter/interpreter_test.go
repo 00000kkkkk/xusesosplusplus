@@ -1650,3 +1650,64 @@ func TestUrlEncode(t *testing.T) {
 	`)
 	expectOutput(t, interp, "xuitru")
 }
+
+func TestTcpFunctionsExist(t *testing.T) {
+	interp := run(t, `
+		print(type(tcp_listen))
+		print(type(tcp_connect))
+	`)
+	expectOutput(t, interp, "builtin", "builtin")
+}
+
+func TestHttpPostExists(t *testing.T) {
+	interp := run(t, `print(type(http_post))`)
+	expectOutput(t, interp, "builtin")
+}
+
+// --- Timer / Ticker / Sort / Error built-in tests ---
+
+func TestSetTimeout(t *testing.T) {
+	interp := run(t, `
+		xuet ch = channel(1)
+		set_timeout(() => { send(ch, "done") }, 10)
+		xuet result = recv(ch)
+		print(result)
+	`)
+	expectOutput(t, interp, "done")
+}
+
+func TestSortBy(t *testing.T) {
+	interp := run(t, `
+		xuet arr = [3, 1, 4, 1, 5]
+		xuet sorted = sort_by(arr, (a, b) => a - b)
+		print(sorted)
+	`)
+	expectOutput(t, interp, "[1, 1, 3, 4, 5]")
+}
+
+func TestSortByDesc(t *testing.T) {
+	interp := run(t, `
+		xuet arr = [3, 1, 4, 1, 5]
+		xuet sorted = sort_by(arr, (a, b) => b - a)
+		print(sorted)
+	`)
+	expectOutput(t, interp, "[5, 4, 3, 1, 1]")
+}
+
+func TestErrorNew(t *testing.T) {
+	interp := run(t, `
+		xuet err = error_new("something failed")
+		print(is_err(err))
+		print(err["message"])
+	`)
+	expectOutput(t, interp, "xuitru", "something failed")
+}
+
+func TestErrorWrap(t *testing.T) {
+	interp := run(t, `
+		xuet inner = error_new("file not found")
+		xuet wrapped = error_wrap(inner, "config loading failed")
+		print(wrapped["message"])
+	`)
+	expectOutput(t, interp, "config loading failed: file not found")
+}

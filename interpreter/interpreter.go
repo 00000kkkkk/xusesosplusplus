@@ -11,6 +11,7 @@ import (
 	"io"
 	"math"
 	"math/rand"
+	"net"
 	"net/http"
 	"net/url"
 	"os"
@@ -30,6 +31,10 @@ var wgRegistry = make(map[int64]*sync.WaitGroup)
 var wgCounter int64
 var muRegistry = make(map[int64]*sync.Mutex)
 var muCounter int64
+var tcpListeners = make(map[int64]net.Listener)
+var tcpListenerCounter int64
+var tcpConns = make(map[int64]net.Conn)
+var tcpConnCounter int64
 
 // InterfaceDef stores an interface (trait) definition.
 type InterfaceDef struct {
@@ -1511,6 +1516,342 @@ func (i *Interpreter) registerBuiltins() {
 		fmt.Print(result)
 		i.output = append(i.output, result)
 		return NullValue(), nil
+	}}, false)
+
+	// --- HTTP Server built-ins ---
+
+	// http_serve(addr, handler) — start HTTP server. handler is a function that receives (path, method) and returns response string
+	i.globals.Define("http_serve", &Value{Type: VAL_BUILTIN, BuiltinVal: func(args []*Value) (*Value, error) {
+		if len(args) != 2 || args[0].Type != VAL_STRING || (args[1].Type != VAL_FUNCTION && args[1].Type != VAL_BUILTIN) {
+			return nil, fmt.Errorf("http_serve() takes address string and handler function")
+		}
+		addr := args[0].StringVal
+		handler := args[1]
+
+		http.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
+			// Call the handler with path and method
+			handlerArgs := []*Value{StringVal(r.URL.Path), StringVal(r.Method)}
+			var result *Value
+			var err error
+			if handler.Type == VAL_BUILTIN {
+				result, err = handler.BuiltinVal(handlerArgs)
+			} else {
+				fn := handler.FuncVal
+				funcEnv := NewEnclosedEnvironment(fn.Closure)
+				for idx, pName := range fn.ParamNames {
+					if idx < len(handlerArgs) {
+						funcEnv.Define(pName, handlerArgs[idx], true)
+					}
+				}
+				body := fn.Body.(*parser.BlockStatement)
+				val, execErr := i.execBlock(body, funcEnv)
+				if execErr != nil {
+					http.Error(w, execErr.Error(), 500)
+					return
+				}
+				if val != nil && val.Type == VAL_RETURN {
+					result = val.ReturnVal
+				} else {
+					result = val
+				}
+				err = execErr
+			}
+			if err != nil {
+				http.Error(w, err.Error(), 500)
+				return
+			}
+			if result != nil {
+				w.Header().Set("Content-Type", "text/plain")
+				fmt.Fprint(w, result.String())
+			}
+		})
+
+		line := fmt.Sprintf("Server listening on %s", addr)
+		fmt.Println(line)
+		i.output = append(i.output, line)
+		return NullValue(), http.ListenAndServe(addr, nil)
+	}}, false)
+
+	// http_post(url, body, content_type) — HTTP POST request
+	i.globals.Define("http_post", &Value{Type: VAL_BUILTIN, BuiltinVal: func(args []*Value) (*Value, error) {
+		if len(args) < 2 || args[0].Type != VAL_STRING || args[1].Type != VAL_STRING {
+			return nil, fmt.Errorf("http_post() takes url, body, and optional content_type")
+		}
+		contentType := "application/json"
+		if len(args) > 2 && args[2].Type == VAL_STRING {
+			contentType = args[2].StringVal
+		}
+		resp, err := http.Post(args[0].StringVal, contentType, strings.NewReader(args[1].StringVal))
+		if err != nil {
+			return nil, fmt.Errorf("http_post: %s", err)
+		}
+		defer resp.Body.Close()
+		body, err := io.ReadAll(resp.Body)
+		if err != nil {
+			return nil, fmt.Errorf("http_post: %s", err)
+		}
+		return StringVal(string(body)), nil
+	}}, false)
+
+	// --- TCP Socket built-ins ---
+
+	// tcp_listen(addr) — start TCP listener, returns listener ID
+	i.globals.Define("tcp_listen", &Value{Type: VAL_BUILTIN, BuiltinVal: func(args []*Value) (*Value, error) {
+		if len(args) != 1 || args[0].Type != VAL_STRING {
+			return nil, fmt.Errorf("tcp_listen() takes 1 address string")
+		}
+		ln, err := net.Listen("tcp", args[0].StringVal)
+		if err != nil {
+			return nil, fmt.Errorf("tcp_listen: %s", err)
+		}
+		tcpListenerCounter++
+		tcpListeners[tcpListenerCounter] = ln
+		return IntVal(tcpListenerCounter), nil
+	}}, false)
+
+	// tcp_accept(listener_id) — accept connection, returns conn ID
+	i.globals.Define("tcp_accept", &Value{Type: VAL_BUILTIN, BuiltinVal: func(args []*Value) (*Value, error) {
+		if len(args) != 1 || args[0].Type != VAL_INT {
+			return nil, fmt.Errorf("tcp_accept() takes listener ID")
+		}
+		ln, ok := tcpListeners[args[0].IntVal]
+		if !ok {
+			return nil, fmt.Errorf("invalid listener")
+		}
+		conn, err := ln.Accept()
+		if err != nil {
+			return nil, fmt.Errorf("tcp_accept: %s", err)
+		}
+		tcpConnCounter++
+		tcpConns[tcpConnCounter] = conn
+		return IntVal(tcpConnCounter), nil
+	}}, false)
+
+	// tcp_connect(addr) — connect to TCP server
+	i.globals.Define("tcp_connect", &Value{Type: VAL_BUILTIN, BuiltinVal: func(args []*Value) (*Value, error) {
+		if len(args) != 1 || args[0].Type != VAL_STRING {
+			return nil, fmt.Errorf("tcp_connect() takes 1 address string")
+		}
+		conn, err := net.Dial("tcp", args[0].StringVal)
+		if err != nil {
+			return nil, fmt.Errorf("tcp_connect: %s", err)
+		}
+		tcpConnCounter++
+		tcpConns[tcpConnCounter] = conn
+		return IntVal(tcpConnCounter), nil
+	}}, false)
+
+	// tcp_send(conn_id, data) — send data
+	i.globals.Define("tcp_send", &Value{Type: VAL_BUILTIN, BuiltinVal: func(args []*Value) (*Value, error) {
+		if len(args) != 2 || args[0].Type != VAL_INT || args[1].Type != VAL_STRING {
+			return nil, fmt.Errorf("tcp_send() takes conn ID and string data")
+		}
+		conn, ok := tcpConns[args[0].IntVal]
+		if !ok {
+			return nil, fmt.Errorf("invalid connection")
+		}
+		_, err := conn.Write([]byte(args[1].StringVal))
+		if err != nil {
+			return nil, fmt.Errorf("tcp_send: %s", err)
+		}
+		return NullValue(), nil
+	}}, false)
+
+	// tcp_recv(conn_id, max_bytes) — receive data
+	i.globals.Define("tcp_recv", &Value{Type: VAL_BUILTIN, BuiltinVal: func(args []*Value) (*Value, error) {
+		if len(args) < 1 || args[0].Type != VAL_INT {
+			return nil, fmt.Errorf("tcp_recv() takes conn ID and optional max bytes")
+		}
+		conn, ok := tcpConns[args[0].IntVal]
+		if !ok {
+			return nil, fmt.Errorf("invalid connection")
+		}
+		maxBytes := 4096
+		if len(args) > 1 && args[1].Type == VAL_INT {
+			maxBytes = int(args[1].IntVal)
+		}
+		buf := make([]byte, maxBytes)
+		n, err := conn.Read(buf)
+		if err != nil && n == 0 {
+			return nil, fmt.Errorf("tcp_recv: %s", err)
+		}
+		return StringVal(string(buf[:n])), nil
+	}}, false)
+
+	// tcp_close(conn_or_listener_id) — close connection or listener
+	i.globals.Define("tcp_close", &Value{Type: VAL_BUILTIN, BuiltinVal: func(args []*Value) (*Value, error) {
+		if len(args) != 1 || args[0].Type != VAL_INT {
+			return nil, fmt.Errorf("tcp_close() takes 1 ID")
+		}
+		id := args[0].IntVal
+		if conn, ok := tcpConns[id]; ok {
+			conn.Close()
+			delete(tcpConns, id)
+		}
+		if ln, ok := tcpListeners[id]; ok {
+			ln.Close()
+			delete(tcpListeners, id)
+		}
+		return NullValue(), nil
+	}}, false)
+
+	// --- Timers / Tickers ---
+
+	// set_timeout(func, ms) — run function after delay (non-blocking)
+	i.globals.Define("set_timeout", &Value{Type: VAL_BUILTIN, BuiltinVal: func(args []*Value) (*Value, error) {
+		if len(args) != 2 || args[1].Type != VAL_INT {
+			return nil, fmt.Errorf("set_timeout() takes function and milliseconds")
+		}
+		fn := args[0]
+		ms := args[1].IntVal
+		go func() {
+			time.Sleep(time.Duration(ms) * time.Millisecond)
+			if fn.Type == VAL_BUILTIN {
+				fn.BuiltinVal(nil)
+			} else if fn.Type == VAL_FUNCTION {
+				body := fn.FuncVal.Body.(*parser.BlockStatement)
+				env := NewEnclosedEnvironment(fn.FuncVal.Closure)
+				i.execBlock(body, env)
+			}
+		}()
+		return NullValue(), nil
+	}}, false)
+
+	// set_interval(func, ms) — run function repeatedly every ms milliseconds
+	i.globals.Define("set_interval", &Value{Type: VAL_BUILTIN, BuiltinVal: func(args []*Value) (*Value, error) {
+		if len(args) != 2 || args[1].Type != VAL_INT {
+			return nil, fmt.Errorf("set_interval() takes function and milliseconds")
+		}
+		fn := args[0]
+		ms := args[1].IntVal
+		stop := make(chan *Value, 1)
+		go func() {
+			ticker := time.NewTicker(time.Duration(ms) * time.Millisecond)
+			defer ticker.Stop()
+			for {
+				select {
+				case <-ticker.C:
+					if fn.Type == VAL_BUILTIN {
+						fn.BuiltinVal(nil)
+					} else if fn.Type == VAL_FUNCTION {
+						body := fn.FuncVal.Body.(*parser.BlockStatement)
+						env := NewEnclosedEnvironment(fn.FuncVal.Closure)
+						i.execBlock(body, env)
+					}
+				case <-stop:
+					return
+				}
+			}
+		}()
+		return &Value{Type: VAL_CHANNEL, ChannelVal: stop}, nil
+	}}, false)
+
+	// clear_interval(ch) — stop an interval by sending to its stop channel
+	i.globals.Define("clear_interval", &Value{Type: VAL_BUILTIN, BuiltinVal: func(args []*Value) (*Value, error) {
+		if len(args) != 1 || args[0].Type != VAL_CHANNEL {
+			return nil, fmt.Errorf("clear_interval() takes a channel (from set_interval)")
+		}
+		args[0].ChannelVal <- NullValue()
+		return NullValue(), nil
+	}}, false)
+
+	// --- Sort with custom comparator ---
+
+	// sort_by(arr, comparator) — sort array using custom comparator function
+	i.globals.Define("sort_by", &Value{Type: VAL_BUILTIN, BuiltinVal: func(args []*Value) (*Value, error) {
+		if len(args) != 2 || args[0].Type != VAL_ARRAY {
+			return nil, fmt.Errorf("sort_by() takes array and comparator function")
+		}
+		arr := make([]*Value, len(args[0].ArrayVal))
+		copy(arr, args[0].ArrayVal)
+		cmp := args[1]
+
+		// Bubble sort with custom comparator
+		for idx := 0; idx < len(arr); idx++ {
+			for j := 0; j < len(arr)-1-idx; j++ {
+				var result *Value
+				var err error
+				cmpArgs := []*Value{arr[j], arr[j+1]}
+				if cmp.Type == VAL_BUILTIN {
+					result, err = cmp.BuiltinVal(cmpArgs)
+				} else {
+					fn := cmp.FuncVal
+					funcEnv := NewEnclosedEnvironment(fn.Closure)
+					for k, pName := range fn.ParamNames {
+						if k < len(cmpArgs) {
+							funcEnv.Define(pName, cmpArgs[k], true)
+						}
+					}
+					body := fn.Body.(*parser.BlockStatement)
+					val, execErr := i.execBlock(body, funcEnv)
+					if execErr != nil {
+						return nil, execErr
+					}
+					if val != nil && val.Type == VAL_RETURN {
+						result = val.ReturnVal
+					} else {
+						result = val
+					}
+					err = nil
+				}
+				if err != nil {
+					return nil, err
+				}
+				if result != nil && result.Type == VAL_INT && result.IntVal > 0 {
+					arr[j], arr[j+1] = arr[j+1], arr[j]
+				}
+			}
+		}
+		return ArrayValue(arr), nil
+	}}, false)
+
+	// --- Error wrapping ---
+
+	// error_new(message) — create an error value
+	i.globals.Define("error_new", &Value{Type: VAL_BUILTIN, BuiltinVal: func(args []*Value) (*Value, error) {
+		if len(args) != 1 {
+			return nil, fmt.Errorf("error_new() takes 1 argument")
+		}
+		pairs := make(map[string]*Value)
+		keys := []string{"message", "type"}
+		pairs["message"] = StringVal(args[0].String())
+		pairs["type"] = StringVal("error")
+		return MapVal(pairs, keys), nil
+	}}, false)
+
+	// error_wrap(err, message) — wrap an error with additional context
+	i.globals.Define("error_wrap", &Value{Type: VAL_BUILTIN, BuiltinVal: func(args []*Value) (*Value, error) {
+		if len(args) != 2 {
+			return nil, fmt.Errorf("error_wrap() takes error and message")
+		}
+		innerMsg := ""
+		if args[0].Type == VAL_MAP {
+			if m, ok := args[0].MapVal.Pairs["message"]; ok {
+				innerMsg = m.String()
+			}
+		} else {
+			innerMsg = args[0].String()
+		}
+		wrapped := args[1].String() + ": " + innerMsg
+		pairs := make(map[string]*Value)
+		keys := []string{"message", "type", "cause"}
+		pairs["message"] = StringVal(wrapped)
+		pairs["type"] = StringVal("error")
+		pairs["cause"] = args[0]
+		return MapVal(pairs, keys), nil
+	}}, false)
+
+	// is_err(value) — check if value is an error (map with type="error")
+	i.globals.Define("is_err", &Value{Type: VAL_BUILTIN, BuiltinVal: func(args []*Value) (*Value, error) {
+		if len(args) != 1 {
+			return nil, fmt.Errorf("is_err() takes 1 argument")
+		}
+		if args[0].Type == VAL_MAP {
+			if t, ok := args[0].MapVal.Pairs["type"]; ok {
+				return BoolValue(t.StringVal == "error"), nil
+			}
+		}
+		return BoolValue(false), nil
 	}}, false)
 }
 

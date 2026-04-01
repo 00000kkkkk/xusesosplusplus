@@ -1,0 +1,43 @@
+// Go-style error handling in Xuesos++
+
+xuen read_config(path str) {
+    xuif (!file_exists(path)) {
+        xueturn tuple(xuinull, error_new("file not found: " + path))
+    }
+    xuet content = io_read_file(path)
+    xuet config = json_parse(content)
+    xueturn tuple(config, xuinull)
+}
+
+xuen get_setting(config, key str) {
+    xuif (config == xuinull) {
+        xueturn tuple("", error_new("config is null"))
+    }
+    xuif (!has_key(config, key)) {
+        xueturn tuple("", error_new("missing key: " + key))
+    }
+    xueturn tuple(config[key], xuinull)
+}
+
+xuen main() {
+    // Try to read config
+    xuet result = read_config("config.json")
+    xuet config = first(result)
+    xuet err = second(result)
+
+    xuif (err != xuinull && is_err(err)) {
+        print("Error: {err["message"]}")
+
+        // Wrap the error with context
+        xuet wrapped = error_wrap(err, "startup failed")
+        print("Wrapped: {wrapped["message"]}")
+    } xuelse {
+        print("Config loaded!")
+    }
+
+    // Demonstrate error propagation
+    xuet setting = get_setting(xuinull, "database")
+    xuif (second(setting) != xuinull) {
+        print("Setting error: {second(setting)["message"]}")
+    }
+}

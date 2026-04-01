@@ -149,6 +149,16 @@ func (c *Checker) registerBuiltins() {
 	// HTTP built-ins
 	c.scope.define("http_get", &FuncType{ReturnType: TypeStr}, false)
 	c.scope.define("http_status", &FuncType{ReturnType: TypeInt}, false)
+	c.scope.define("http_serve", &FuncType{ReturnType: TypeVoid}, false)
+	c.scope.define("http_post", &FuncType{ReturnType: TypeStr}, false)
+
+	// TCP Socket built-ins
+	c.scope.define("tcp_listen", &FuncType{ReturnType: TypeInt}, false)
+	c.scope.define("tcp_accept", &FuncType{ReturnType: TypeInt}, false)
+	c.scope.define("tcp_connect", &FuncType{ReturnType: TypeInt}, false)
+	c.scope.define("tcp_send", &FuncType{ReturnType: TypeVoid}, false)
+	c.scope.define("tcp_recv", &FuncType{ReturnType: TypeStr}, false)
+	c.scope.define("tcp_close", &FuncType{ReturnType: TypeVoid}, false)
 
 	// JSON built-ins
 	c.scope.define("json_parse", &FuncType{ReturnType: TypeVoid}, false)
@@ -248,6 +258,19 @@ func (c *Checker) registerBuiltins() {
 	c.scope.define("base64_decode", &FuncType{ReturnType: TypeStr}, false)
 	c.scope.define("url_encode", &FuncType{ReturnType: TypeStr}, false)
 	c.scope.define("url_decode", &FuncType{ReturnType: TypeStr}, false)
+
+	// Timer / Ticker built-ins
+	c.scope.define("set_timeout", &FuncType{ReturnType: TypeVoid}, false)
+	c.scope.define("set_interval", &FuncType{ReturnType: TypeVoid}, false)
+	c.scope.define("clear_interval", &FuncType{ReturnType: TypeVoid}, false)
+
+	// Sort with custom comparator
+	c.scope.define("sort_by", &FuncType{ReturnType: &ArrayType{ElementType: TypeVoid}}, false)
+
+	// Error wrapping built-ins
+	c.scope.define("error_new", &FuncType{ReturnType: TypeVoid}, false)
+	c.scope.define("error_wrap", &FuncType{ReturnType: TypeVoid}, false)
+	c.scope.define("is_err", &FuncType{ReturnType: TypeBool}, false)
 }
 
 // Check type-checks a program and returns any errors.

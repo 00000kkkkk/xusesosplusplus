@@ -1,0 +1,21 @@
+// HTTP Server in Xuesos++
+// Run: xuesos run examples/http_server.xpp
+// Then visit: http://localhost:8080
+
+xuen handle(path str, method str) str {
+    xuif (path == "/") {
+        xueturn "Welcome to Xuesos++ HTTP Server!"
+    }
+    xuif (path == "/api/hello") {
+        xueturn json_stringify({"message": "Hello from Xuesos++!", "status": "ok"})
+    }
+    xuif (path == "/api/time") {
+        xueturn json_stringify({"time": time_now(), "platform": os_platform()})
+    }
+    xueturn "404 Not Found: " + path
+}
+
+xuen main() {
+    print("Starting Xuesos++ HTTP server...")
+    http_serve(":8080", handle)
+}
