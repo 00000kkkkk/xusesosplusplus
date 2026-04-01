@@ -610,6 +610,10 @@ func (c *Checker) checkInfix(e *parser.InfixExpression) Type {
 }
 
 func (c *Checker) checkNumericOp(e *parser.InfixExpression, left, right Type) Type {
+	// Allow void (unknown/dynamic) in arithmetic — common with map values
+	if left.Equals(TypeVoid) || right.Equals(TypeVoid) {
+		return TypeVoid
+	}
 	if !IsNumeric(left) || !IsNumeric(right) {
 		c.errorf(e.Pos, "cannot apply %s to %s and %s", e.Operator, left.TypeName(), right.TypeName())
 		return nil
@@ -678,22 +682,28 @@ func (c *Checker) checkIndex(e *parser.IndexExpression) Type {
 	leftType := c.checkExpression(e.Left)
 	idxType := c.checkExpression(e.Index)
 
-	if idxType != nil && !IsInteger(idxType) {
-		c.errorf(e.Pos, "index must be int, got %s", idxType.TypeName())
-	}
-
 	if leftType == nil {
-		return nil
+		// Unknown type — allow indexing (could be map or dynamic)
+		return TypeVoid
 	}
 
 	if arr, ok := leftType.(*ArrayType); ok {
+		if idxType != nil && !IsInteger(idxType) {
+			c.errorf(e.Pos, "array index must be int, got %s", idxType.TypeName())
+		}
 		return arr.ElementType
 	}
 	if leftType.Equals(TypeStr) {
 		return TypeChar
 	}
 
-	c.errorf(e.Pos, "cannot index %s", leftType.TypeName())
+	// Allow indexing on void/unknown types (maps, dynamic values)
+	if leftType.Equals(TypeVoid) {
+		return TypeVoid
+	}
+
+	// Unknown container type — be permissive
+	_ = idxType
 	return nil
 }
 

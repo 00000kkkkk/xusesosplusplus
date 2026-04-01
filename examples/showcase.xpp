@@ -1,0 +1,231 @@
+// ============================================
+// Xuesos++ Language Showcase
+// Демонстрація всіх можливостей мови
+// ============================================
+
+// --- Структури ---
+xuiruct Player {
+    name str
+    health int
+    score int
+    alive bool
+}
+
+xuimpl Player {
+    xuen hit(xuiar self, dmg int) {
+        self.health = self.health - dmg
+        xuif (self.health <= 0) {
+            self.health = 0
+            self.alive = xuinia
+        }
+    }
+
+    xuen heal(xuiar self, amount int) {
+        self.health = self.health + amount
+        xuif (self.health > 100) {
+            self.health = 100
+        }
+    }
+
+    xuen info(self) str {
+        xuiar status = "alive"
+        xuif (!self.alive) {
+            status = "dead"
+        }
+        xueturn "{self.name}: {self.health}hp ({status}) score={self.score}"
+    }
+}
+
+// --- Енами ---
+xuenum Difficulty {
+    Easy
+    Normal
+    Hard
+}
+
+// --- Функції ---
+xuen fibonacci(n int) int {
+    xuif (n <= 1) {
+        xueturn n
+    }
+    xueturn fibonacci(n - 1) + fibonacci(n - 2)
+}
+
+xuen factorial(n int) int {
+    xuif (n <= 1) {
+        xueturn 1
+    }
+    xueturn n * factorial(n - 1)
+}
+
+xuen is_prime(n int) bool {
+    xuif (n < 2) {
+        xueturn xuinia
+    }
+    xuiar i = 2
+    xuile (i * i <= n) {
+        xuif (n % i == 0) {
+            xueturn xuinia
+        }
+        i = i + 1
+    }
+    xueturn xuitru
+}
+
+// --- Лямбди ---
+xuen apply_all(arr []int, f) {
+    xuior (item xuin arr) {
+        f(item)
+    }
+}
+
+// --- Головна програма ---
+xuen main() {
+    print("=== Xuesos++ Showcase ===")
+    print("")
+
+    // Змінні та інтерполяція
+    xuet lang = "Xuesos++"
+    xuet version = "1.0"
+    print("Welcome to {lang} v{version}!")
+    print("")
+
+    // Арифметика
+    print("--- Math ---")
+    print("fibonacci(10) = {fibonacci(10)}")
+    print("factorial(10) = {factorial(10)}")
+    print("sqrt(144) = {sqrt(144.0)}")
+    print("abs(-42) = {abs(-42)}")
+    print("max(17, 42) = {max(17, 42)}")
+    print("pow(2, 16) = {math_pow(2, 16)}")
+    print("")
+
+    // Прості числа
+    print("--- Primes up to 50 ---")
+    xuiar primes = []
+    xuior (n xuin 2..51) {
+        xuif (is_prime(n)) {
+            push(primes, n)
+        }
+    }
+    print(join(primes, ", "))
+    print("")
+
+    // Масиви та цикли
+    print("--- Arrays ---")
+    xuet nums = [64, 25, 12, 22, 11]
+    print("Original: {nums}")
+
+    // Bubble sort
+    xuiar sorted = [64, 25, 12, 22, 11]
+    xuiar n = len(sorted)
+    xuiar swapped = xuitru
+    xuile (swapped) {
+        swapped = xuinia
+        xuiar j = 0
+        xuile (j < n - 1) {
+            xuif (sorted[j] > sorted[j + 1]) {
+                xuet temp = sorted[j]
+                sorted[j] = sorted[j + 1]
+                sorted[j + 1] = temp
+                swapped = xuitru
+            }
+            j = j + 1
+        }
+    }
+    print("Sorted:   {sorted}")
+    print("")
+
+    // Maps
+    print("--- Maps ---")
+    xuiar inventory = {"sword": 1, "shield": 1, "potion": 5}
+    print("Inventory: {inventory}")
+    xuet potions = inventory["potion"]
+    print("Potions: {potions}")
+    inventory["potion"] = potions - 1
+    print("After using potion: {inventory["potion"]} left")
+    print("Has sword? {has_key(inventory, "sword")}")
+    print("")
+
+    // Структури з методами
+    print("--- Structs ---")
+    xuiar hero = Player {
+        name = "Xuesos Hero",
+        health = 100,
+        score = 0,
+        alive = xuitru
+    }
+    print(hero.info())
+    hero.hit(30)
+    print("After hit: {hero.info()}")
+    hero.heal(15)
+    print("After heal: {hero.info()}")
+    print("")
+
+    // Pattern matching
+    print("--- Match ---")
+    xuior (i xuin 1..8) {
+        xuiatch (i % 3) {
+            0 => print("{i} is divisible by 3")
+            1 => print("{i} has remainder 1")
+            _ => print("{i} has remainder 2")
+        }
+    }
+    print("")
+
+    // Лямбди
+    print("--- Lambdas ---")
+    xuet double = (x) => x * 2
+    xuet square = (x) => x * x
+    print("double(21) = {double(21)}")
+    print("square(9) = {square(9)}")
+
+    xuet numbers = [1, 2, 3, 4, 5]
+    xuiar results = []
+    xuior (n xuin numbers) {
+        push(results, square(n))
+    }
+    print("squares of {numbers} = {results}")
+    print("")
+
+    // Error handling
+    print("--- Error Handling ---")
+    xutry {
+        xuthrow "this is a test error"
+    } xucatch (e) {
+        print("Caught: {e}")
+    }
+    print("")
+
+    // Strings
+    print("--- Strings ---")
+    xuet msg = "  Hello, Xuesos++ World!  "
+    print("Original: '{msg}'")
+    print("Trimmed:  '{trim(msg)}'")
+    print("Upper:    '{upper(trim(msg))}'")
+    print("Lower:    '{lower(trim(msg))}'")
+    print("Contains 'Xuesos': {contains(msg, "Xuesos")}")
+    xuet words = split(trim(msg), " ")
+    print("Words: {words}")
+    print("Joined: '{join(words, " | ")}'")
+    print("")
+
+    // FizzBuzz
+    print("--- FizzBuzz (1-20) ---")
+    xuiar fizzbuzz = []
+    xuior (i xuin 1..21) {
+        xuif (i % 15 == 0) {
+            push(fizzbuzz, "FizzBuzz")
+        } xuelse xuif (i % 3 == 0) {
+            push(fizzbuzz, "Fizz")
+        } xuelse xuif (i % 5 == 0) {
+            push(fizzbuzz, "Buzz")
+        } xuelse {
+            push(fizzbuzz, to_str(i))
+        }
+    }
+    print(join(fizzbuzz, ", "))
+    print("")
+
+    print("=== Done! ===")
+}
