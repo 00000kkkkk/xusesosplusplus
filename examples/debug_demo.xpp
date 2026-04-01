@@ -1,0 +1,21 @@
+// Debug demo — run with: xuesos debug examples/debug_demo.xpp
+// Commands: s(step), c(continue), p varname, l(locals), b linenum, q(quit)
+
+xuen fibonacci(n int) int {
+    xuif (n <= 1) {
+        xueturn n
+    }
+    xueturn fibonacci(n - 1) + fibonacci(n - 2)
+}
+
+xuen main() {
+    xuiar sum = 0
+
+    xuior (i xuin 0..10) {
+        xuet fib = fibonacci(i)
+        sum = sum + fib
+        print("fib({i}) = {fib}, running sum = {sum}")
+    }
+
+    print("Total: {sum}")
+}

@@ -24,6 +24,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/00000kkkkk/xusesosplusplus/lexer"
 	"github.com/00000kkkkk/xusesosplusplus/parser"
 )
 
@@ -48,6 +49,11 @@ type deferredCall struct {
 	env  *Environment
 }
 
+// DebugHook is called before each statement during execution.
+// It receives the source position and the current environment.
+// Return true to continue execution, false to stop.
+type DebugHook func(pos lexer.Position, env *Environment) bool
+
 // Interpreter evaluates an AST.
 type Interpreter struct {
 	globals       *Environment
@@ -56,6 +62,12 @@ type Interpreter struct {
 	output        []string // captured output for testing
 	Imports       *ImportResolver
 	deferStack    []deferredCall
+	debugHook     DebugHook
+}
+
+// SetDebugHook installs a callback that fires before each statement.
+func (i *Interpreter) SetDebugHook(hook DebugHook) {
+	i.debugHook = hook
 }
 
 // New creates a new interpreter with built-in functions.
@@ -2099,6 +2111,14 @@ func toFloat(v *Value) (float64, bool) {
 // --- Statement execution ---
 
 func (i *Interpreter) execStatement(stmt parser.Statement, env *Environment) (*Value, error) {
+	if i.debugHook != nil {
+		pos := stmt.TokenPos()
+		if pos.Line > 0 {
+			if !i.debugHook(pos, env) {
+				return nil, fmt.Errorf("debugger: execution stopped")
+			}
+		}
+	}
 	switch s := stmt.(type) {
 	case *parser.XuetStatement:
 		return i.execXuet(s, env)

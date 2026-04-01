@@ -54,3 +54,12 @@ func (e *Environment) Set(name string, val *Value) error {
 	}
 	return fmt.Errorf("undefined variable %q", name)
 }
+
+// AllVars returns all variables in the current scope (not parent scopes).
+func (e *Environment) AllVars() map[string]*Value {
+	result := make(map[string]*Value)
+	for name, val := range e.store {
+		result[name] = val
+	}
+	return result
+}

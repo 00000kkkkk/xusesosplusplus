@@ -28,6 +28,8 @@ func Execute(args []string) error {
 		return runEnv(args[1:])
 	case "get":
 		return runGet(args[1:])
+	case "debug":
+		return runDebug(args[1:])
 	case "lsp":
 		return runLsp()
 	case "version":
@@ -54,6 +56,7 @@ Commands:
   vet [dir]            Run static analysis on .xpp files
   fmt <file.xpp>       Format a source file
   get <package>        Install a package (e.g. github.com/user/repo)
+  debug <file.xpp>     Debug a program (step, breakpoints, inspect)
   doc [file.xpp]       Show documentation (builtins if no file)
   env [var]            Show environment info
   version              Show compiler version
