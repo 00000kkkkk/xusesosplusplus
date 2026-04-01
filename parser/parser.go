@@ -187,6 +187,8 @@ func (p *Parser) parseStatement() Statement {
 		stmt = p.parseXuimportStatement()
 	case lexer.TOKEN_XUIATCH:
 		stmt = p.parseXuiatchStatement()
+	case lexer.TOKEN_XUTRY:
+		stmt = p.parseTryStatement()
 	default:
 		stmt = p.parseExpressionOrAssignStatement()
 	}
@@ -652,10 +654,18 @@ func (p *Parser) parsePrefixExpression() Expression {
 		return &PrefixExpression{Pos: tok.Pos, Operator: tok.Literal, Right: right}
 
 	case lexer.TOKEN_LPAREN:
+		if p.isLambda() {
+			return p.parseLambda()
+		}
 		p.advance()
 		expr := p.parseExpression(LOWEST)
 		p.expect(lexer.TOKEN_RPAREN)
 		return expr
+
+	case lexer.TOKEN_XUTHROW:
+		p.advance()
+		val := p.parseExpression(LOWEST)
+		return &ThrowExpression{Pos: tok.Pos, Value: val}
 
 	case lexer.TOKEN_LBRACKET:
 		return p.parseArrayLiteral()
@@ -784,6 +794,94 @@ func (p *Parser) parseStructLiteral(nameTok lexer.Token) Expression {
 		Pos:    pos,
 		Name:   nameTok.Literal,
 		Fields: fields,
+	}
+}
+
+// isLambda checks if the current ( starts a lambda expression.
+// Heuristic: () => ... or (ident, ...) => ... or (ident type, ...) => ...
+func (p *Parser) isLambda() bool {
+	// Save position
+	saved := p.pos
+	defer func() { p.pos = saved }()
+
+	p.advance() // skip (
+
+	// () => ... — empty params lambda
+	if p.current().Type == lexer.TOKEN_RPAREN {
+		p.advance()
+		return p.current().Type == lexer.TOKEN_FAT_ARROW
+	}
+
+	// Look for pattern: ident [type] [, ident [type]]* ) =>
+	for {
+		if p.current().Type != lexer.TOKEN_IDENT {
+			return false
+		}
+		p.advance() // skip ident
+
+		// Optional type
+		if p.current().Type != lexer.TOKEN_COMMA && p.current().Type != lexer.TOKEN_RPAREN {
+			p.advance() // skip type
+		}
+
+		if p.current().Type == lexer.TOKEN_RPAREN {
+			p.advance()
+			return p.current().Type == lexer.TOKEN_FAT_ARROW
+		}
+		if p.current().Type == lexer.TOKEN_COMMA {
+			p.advance()
+			continue
+		}
+		return false
+	}
+}
+
+func (p *Parser) parseLambda() Expression {
+	pos := p.current().Pos
+	p.advance() // skip (
+
+	var params []Parameter
+	if p.current().Type != lexer.TOKEN_RPAREN {
+		for {
+			name := p.expect(lexer.TOKEN_IDENT).Literal
+			typeName := ""
+			if p.current().Type != lexer.TOKEN_COMMA && p.current().Type != lexer.TOKEN_RPAREN {
+				typeName = p.parseTypeName()
+			}
+			params = append(params, Parameter{Name: name, TypeName: typeName})
+			if !p.match(lexer.TOKEN_COMMA) {
+				break
+			}
+		}
+	}
+	p.expect(lexer.TOKEN_RPAREN)
+	p.expect(lexer.TOKEN_FAT_ARROW)
+
+	// Block body or expression body
+	if p.current().Type == lexer.TOKEN_LBRACE {
+		block := p.parseBlockStatement()
+		return &LambdaExpression{Pos: pos, Params: params, Block: block}
+	}
+
+	body := p.parseExpression(LOWEST)
+	return &LambdaExpression{Pos: pos, Params: params, Body: body}
+}
+
+func (p *Parser) parseTryStatement() Statement {
+	pos := p.advance().Pos // consume xutry
+	body := p.parseBlockStatement()
+
+	p.expect(lexer.TOKEN_XUCATCH)
+	p.expect(lexer.TOKEN_LPAREN)
+	catchVar := p.expect(lexer.TOKEN_IDENT).Literal
+	p.expect(lexer.TOKEN_RPAREN)
+	catchBody := p.parseBlockStatement()
+
+	return &TryStatement{
+		Pos:       pos,
+		Body:      body,
+		CatchVar:  catchVar,
+		CatchBody: catchBody,
 	}
 }
 

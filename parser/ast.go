@@ -425,3 +425,37 @@ type InterpolatedString struct {
 func (e *InterpolatedString) exprNode()                {}
 func (e *InterpolatedString) TokenPos() lexer.Position { return e.Pos }
 func (e *InterpolatedString) nodeType() string         { return "InterpolatedString" }
+
+// LambdaExpression: (a, b) => a + b  or  (a, b) => { body }
+type LambdaExpression struct {
+	Pos    lexer.Position
+	Params []Parameter
+	Body   Expression      // single expression
+	Block  *BlockStatement // block body (one of Body/Block is set)
+}
+
+func (e *LambdaExpression) exprNode()                {}
+func (e *LambdaExpression) TokenPos() lexer.Position { return e.Pos }
+func (e *LambdaExpression) nodeType() string         { return "LambdaExpression" }
+
+// TryStatement: try { body } catch (e) { handler }
+type TryStatement struct {
+	Pos       lexer.Position
+	Body      *BlockStatement
+	CatchVar  string
+	CatchBody *BlockStatement
+}
+
+func (s *TryStatement) stmtNode()               {}
+func (s *TryStatement) TokenPos() lexer.Position { return s.Pos }
+func (s *TryStatement) nodeType() string         { return "TryStatement" }
+
+// ThrowExpression: throw "error message"
+type ThrowExpression struct {
+	Pos   lexer.Position
+	Value Expression
+}
+
+func (e *ThrowExpression) exprNode()                {}
+func (e *ThrowExpression) TokenPos() lexer.Position { return e.Pos }
+func (e *ThrowExpression) nodeType() string         { return "ThrowExpression" }

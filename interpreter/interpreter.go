@@ -557,6 +557,8 @@ func (i *Interpreter) execStatement(stmt parser.Statement, env *Environment) (*V
 		return nil, nil
 	case *parser.XuiatchStatement:
 		return i.execXuiatch(s, env)
+	case *parser.TryStatement:
+		return i.execTry(s, env)
 	case *parser.ExpressionStatement:
 		return i.evalExpression(s.Expr, env)
 	case *parser.BlockStatement:
@@ -892,6 +894,14 @@ func (i *Interpreter) evalExpression(expr parser.Expression, env *Environment) (
 		return i.evalMapLiteral(e, env)
 	case *parser.InterpolatedString:
 		return i.evalInterpolatedString(e, env)
+	case *parser.LambdaExpression:
+		return i.evalLambda(e, env)
+	case *parser.ThrowExpression:
+		val, err := i.evalExpression(e.Value, env)
+		if err != nil {
+			return nil, err
+		}
+		return nil, fmt.Errorf("%s", val.String())
 	default:
 		return nil, fmt.Errorf("unknown expression type: %T", expr)
 	}
@@ -1288,6 +1298,45 @@ func (i *Interpreter) evalExpressions(exprs []parser.Expression, env *Environmen
 		result[idx] = val
 	}
 	return result, nil
+}
+
+func (i *Interpreter) evalLambda(e *parser.LambdaExpression, env *Environment) (*Value, error) {
+	paramNames := make([]string, len(e.Params))
+	for idx, p := range e.Params {
+		paramNames[idx] = p.Name
+	}
+
+	fn := &FuncValue{
+		Name:       "<lambda>",
+		ParamNames: paramNames,
+		Closure:    env,
+	}
+
+	if e.Block != nil {
+		fn.Body = e.Block
+	} else {
+		// Wrap single expression in a block with return
+		fn.Body = &parser.BlockStatement{
+			Pos: e.Pos,
+			Statements: []parser.Statement{
+				&parser.XueturnStatement{Pos: e.Pos, Value: e.Body},
+			},
+		}
+	}
+
+	return &Value{Type: VAL_FUNCTION, FuncVal: fn}, nil
+}
+
+func (i *Interpreter) execTry(s *parser.TryStatement, env *Environment) (*Value, error) {
+	tryEnv := NewEnclosedEnvironment(env)
+	val, err := i.execBlock(s.Body, tryEnv)
+	if err != nil {
+		// Error caught — run catch block
+		catchEnv := NewEnclosedEnvironment(env)
+		catchEnv.Define(s.CatchVar, StringVal(err.Error()), false)
+		return i.execBlock(s.CatchBody, catchEnv)
+	}
+	return val, nil
 }
 
 func (i *Interpreter) evalMapLiteral(e *parser.MapLiteral, env *Environment) (*Value, error) {

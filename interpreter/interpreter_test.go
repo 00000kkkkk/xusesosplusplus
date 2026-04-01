@@ -982,3 +982,112 @@ func TestOsStdlib(t *testing.T) {
 	`)
 	expectOutput(t, interp, "array")
 }
+
+// --- Lambda tests ---
+
+func TestLambdaSimple(t *testing.T) {
+	interp := run(t, `
+		xuet add = (a, b) => a + b
+		print(add(3, 4))
+	`)
+	expectOutput(t, interp, "7")
+}
+
+func TestLambdaNoParams(t *testing.T) {
+	interp := run(t, `
+		xuet greet = () => "hello"
+		print(greet())
+	`)
+	expectOutput(t, interp, "hello")
+}
+
+func TestLambdaBlock(t *testing.T) {
+	interp := run(t, `
+		xuet factorial = (n) => {
+			xuif (n <= 1) {
+				xueturn 1
+			}
+			xueturn n * factorial(n - 1)
+		}
+		print(factorial(5))
+	`)
+	expectOutput(t, interp, "120")
+}
+
+func TestLambdaAsArgument(t *testing.T) {
+	interp := run(t, `
+		xuen apply(f, x int, y int) int {
+			xueturn f(x, y)
+		}
+		xuet result = apply((a, b) => a * b, 6, 7)
+		print(result)
+	`)
+	expectOutput(t, interp, "42")
+}
+
+func TestLambdaClosure(t *testing.T) {
+	interp := run(t, `
+		xuet multiplier = 10
+		xuet times = (x) => x * multiplier
+		print(times(5))
+	`)
+	expectOutput(t, interp, "50")
+}
+
+// --- Try/Catch tests ---
+
+func TestTryCatch(t *testing.T) {
+	interp := run(t, `
+		xutry {
+			xuet x = 10 / 0
+		} xucatch (e) {
+			print("caught: " + e)
+		}
+	`)
+	output := interp.Output()
+	if len(output) != 1 {
+		t.Fatalf("expected 1 output, got %d: %v", len(output), output)
+	}
+	if !strings.Contains(output[0], "caught:") {
+		t.Errorf("expected caught error, got %q", output[0])
+	}
+}
+
+func TestTryCatchNoError(t *testing.T) {
+	interp := run(t, `
+		xutry {
+			print("ok")
+		} xucatch (e) {
+			print("error: " + e)
+		}
+	`)
+	expectOutput(t, interp, "ok")
+}
+
+func TestThrow(t *testing.T) {
+	interp := run(t, `
+		xutry {
+			xuthrow "something went wrong"
+		} xucatch (e) {
+			print(e)
+		}
+	`)
+	expectOutput(t, interp, "something went wrong")
+}
+
+func TestThrowInFunction(t *testing.T) {
+	interp := run(t, `
+		xuen divide(a int, b int) int {
+			xuif (b == 0) {
+				xuthrow "division by zero!"
+			}
+			xueturn a / b
+		}
+		xutry {
+			print(divide(10, 0))
+		} xucatch (e) {
+			print("error: " + e)
+		}
+	`)
+	expectOutput(t, interp, "error: division by zero!")
+}

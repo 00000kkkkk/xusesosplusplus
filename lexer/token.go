@@ -54,6 +54,9 @@ const (
 	TOKEN_XUIUB    // xuiub (pub)
 	TOKEN_XUIEAK   // xuieak (break)
 	TOKEN_XUITINUE // xuitinue (continue)
+	TOKEN_XUTRY    // xutry (try)
+	TOKEN_XUCATCH  // xucatch (catch)
+	TOKEN_XUTHROW  // xuthrow (throw)
 
 	// Type keywords
 	TOKEN_INT_TYPE
@@ -136,6 +139,9 @@ var tokenNames = map[TokenType]string{
 	TOKEN_XUIUB:    "xuiub",
 	TOKEN_XUIEAK:   "xuieak",
 	TOKEN_XUITINUE: "xuitinue",
+	TOKEN_XUTRY:    "xutry",
+	TOKEN_XUCATCH:  "xucatch",
+	TOKEN_XUTHROW:  "xuthrow",
 
 	TOKEN_INT_TYPE:     "int",
 	TOKEN_INT8_TYPE:    "int8",
@@ -222,6 +228,9 @@ var keywords = map[string]TokenType{
 	"xuiub":    TOKEN_XUIUB,
 	"xuieak":   TOKEN_XUIEAK,
 	"xuitinue": TOKEN_XUITINUE,
+	"xutry":    TOKEN_XUTRY,
+	"xucatch":  TOKEN_XUCATCH,
+	"xuthrow":  TOKEN_XUTHROW,
 	"int":      TOKEN_INT_TYPE,
 	"int8":     TOKEN_INT8_TYPE,
 	"int16":    TOKEN_INT16_TYPE,
