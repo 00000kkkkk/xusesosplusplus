@@ -191,6 +191,42 @@ func (c *Checker) registerBuiltins() {
 	// Test built-ins
 	c.scope.define("assert", &FuncType{ReturnType: TypeVoid}, false)
 	c.scope.define("assert_eq", &FuncType{ReturnType: TypeVoid}, false)
+
+	// Benchmark/timing built-ins
+	c.scope.define("benchmark", &FuncType{ReturnType: TypeVoid}, false)
+	c.scope.define("time_now", &FuncType{ReturnType: TypeInt}, false)
+	c.scope.define("time_since", &FuncType{ReturnType: TypeInt}, false)
+
+	// String functions
+	c.scope.define("repeat", &FuncType{ReturnType: TypeStr}, false)
+	c.scope.define("pad_left", &FuncType{ReturnType: TypeStr}, false)
+	c.scope.define("pad_right", &FuncType{ReturnType: TypeStr}, false)
+	c.scope.define("count", &FuncType{ReturnType: TypeInt}, false)
+	c.scope.define("reverse", &FuncType{ReturnType: TypeVoid}, false)
+
+	// Array functions
+	c.scope.define("sort_arr", &FuncType{ReturnType: &ArrayType{ElementType: TypeVoid}}, false)
+	c.scope.define("unique", &FuncType{ReturnType: &ArrayType{ElementType: TypeVoid}}, false)
+	c.scope.define("flatten", &FuncType{ReturnType: &ArrayType{ElementType: TypeVoid}}, false)
+	c.scope.define("zip", &FuncType{ReturnType: &ArrayType{ElementType: TypeVoid}}, false)
+	c.scope.define("enumerate", &FuncType{ReturnType: &ArrayType{ElementType: TypeVoid}}, false)
+
+	// Math functions
+	c.scope.define("math_random", &FuncType{ReturnType: TypeFloat}, false)
+	c.scope.define("math_rand_int", &FuncType{ReturnType: TypeInt}, false)
+	c.scope.define("math_max_int", &FuncType{ReturnType: TypeInt}, false)
+	c.scope.define("math_min_int", &FuncType{ReturnType: TypeInt}, false)
+
+	// OS functions
+	c.scope.define("os_setenv", &FuncType{ReturnType: TypeVoid}, false)
+	c.scope.define("os_cwd", &FuncType{ReturnType: TypeStr}, false)
+	c.scope.define("os_hostname", &FuncType{ReturnType: TypeStr}, false)
+	c.scope.define("os_platform", &FuncType{ReturnType: TypeStr}, false)
+	c.scope.define("os_arch", &FuncType{ReturnType: TypeStr}, false)
+
+	// Pointer/memory
+	c.scope.define("alloc", &FuncType{ReturnType: &ArrayType{ElementType: TypeInt}}, false)
+	c.scope.define("sizeof", &FuncType{ReturnType: TypeInt}, false)
 }
 
 // Check type-checks a program and returns any errors.
@@ -308,6 +344,15 @@ func (c *Checker) checkStatement(stmt parser.Statement) {
 		// registered in first pass, no body to check
 	case *parser.XudeferStatement:
 		c.checkExpression(s.Call)
+	case *parser.XuselectStatement:
+		for _, sc := range s.Cases {
+			if sc.Channel != nil {
+				c.checkExpression(sc.Channel)
+			}
+			if sc.Body != nil {
+				c.checkBlock(sc.Body)
+			}
+		}
 	}
 }
 

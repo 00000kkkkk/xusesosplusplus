@@ -1,0 +1,18 @@
+// Benchmark example
+xuen fib(n int) int {
+    xuif (n <= 1) { xueturn n }
+    xueturn fib(n - 1) + fib(n - 2)
+}
+
+xuen main() {
+    benchmark("fib(20)", () => {
+        fib(20)
+    }, 100)
+
+    benchmark("loop 1000", () => {
+        xuiar sum = 0
+        xuior (i xuin 0..1000) {
+            sum = sum + i
+        }
+    }, 1000)
+}

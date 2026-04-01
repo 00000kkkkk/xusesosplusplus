@@ -193,6 +193,8 @@ func (p *Parser) parseStatement() Statement {
 		stmt = p.parseXuinterfaceStatement()
 	case lexer.TOKEN_XUDEFER:
 		stmt = p.parseXudeferStatement()
+	case lexer.TOKEN_XUSELECT:
+		stmt = p.parseXuselectStatement()
 	default:
 		stmt = p.parseExpressionOrAssignStatement()
 	}
@@ -1002,6 +1004,33 @@ func (p *Parser) parseInterpolatedString() Expression {
 		return parts[0]
 	}
 	return &InterpolatedString{Pos: pos, Parts: parts}
+}
+
+func (p *Parser) parseXuselectStatement() Statement {
+	pos := p.advance().Pos // consume xuselect
+	p.expect(lexer.TOKEN_LBRACE)
+	p.skipSemicolons()
+
+	var cases []SelectCase
+	for p.current().Type != lexer.TOKEN_RBRACE && !p.isAtEnd() {
+		if p.current().Type == lexer.TOKEN_IDENT && p.current().Literal == "_" {
+			// default case: _ => { body }
+			p.advance() // skip _
+			p.expect(lexer.TOKEN_FAT_ARROW)
+			body := p.parseBlockStatement()
+			cases = append(cases, SelectCase{IsDefault: true, Body: body})
+		} else {
+			// channel case: expr => { body }
+			chExpr := p.parseExpression(LOWEST)
+			p.expect(lexer.TOKEN_FAT_ARROW)
+			body := p.parseBlockStatement()
+			cases = append(cases, SelectCase{Channel: chExpr, Body: body})
+		}
+		p.skipSemicolons()
+	}
+
+	p.expect(lexer.TOKEN_RBRACE)
+	return &XuselectStatement{Pos: pos, Cases: cases}
 }
 
 // parseInt parses integer literals including hex, binary, octal.

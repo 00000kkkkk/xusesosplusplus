@@ -1376,3 +1376,121 @@ func TestMutex(t *testing.T) {
 	`)
 	expectOutput(t, interp, "ok")
 }
+
+func TestTimeNow(t *testing.T) {
+	interp := run(t, `
+		xuet start = time_now()
+		xuet elapsed = time_since(start)
+		print(elapsed >= 0)
+	`)
+	expectOutput(t, interp, "xuitru")
+}
+
+func TestBenchmarkBuiltin(t *testing.T) {
+	interp := run(t, `
+		xuiar counter = 0
+		xuen inc() {
+			counter = counter + 1
+		}
+		benchmark("inc", inc, 10)
+	`)
+	output := interp.Output()
+	if len(output) != 1 {
+		t.Fatalf("expected 1 output line, got %d: %v", len(output), output)
+	}
+	if !strings.Contains(output[0], "benchmark inc:") {
+		t.Errorf("expected benchmark output, got %q", output[0])
+	}
+	if !strings.Contains(output[0], "10 iterations") {
+		t.Errorf("expected 10 iterations in output, got %q", output[0])
+	}
+}
+
+// --- Standard library expansion tests ---
+
+func TestRepeat(t *testing.T) {
+	interp := run(t, `print(repeat("ab", 3))`)
+	expectOutput(t, interp, "ababab")
+}
+
+func TestReverse(t *testing.T) {
+	interp := run(t, `
+		print(reverse("hello"))
+		print(reverse([1, 2, 3]))
+	`)
+	expectOutput(t, interp, "olleh", "[3, 2, 1]")
+}
+
+func TestSortArr(t *testing.T) {
+	interp := run(t, `
+		print(sort_arr([3, 1, 4, 1, 5, 9]))
+	`)
+	expectOutput(t, interp, "[1, 1, 3, 4, 5, 9]")
+}
+
+func TestUnique(t *testing.T) {
+	interp := run(t, `print(unique([1, 2, 2, 3, 3, 3]))`)
+	expectOutput(t, interp, "[1, 2, 3]")
+}
+
+func TestZip(t *testing.T) {
+	interp := run(t, `
+		xuet pairs = zip([1, 2, 3], ["a", "b", "c"])
+		print(len(pairs))
+	`)
+	expectOutput(t, interp, "3")
+}
+
+func TestEnumerate(t *testing.T) {
+	interp := run(t, `
+		xuet items = enumerate(["a", "b", "c"])
+		print(len(items))
+	`)
+	expectOutput(t, interp, "3")
+}
+
+func TestCount(t *testing.T) {
+	interp := run(t, `print(count("hello world hello", "hello"))`)
+	expectOutput(t, interp, "2")
+}
+
+func TestOsPlatform(t *testing.T) {
+	interp := run(t, `
+		xuet p = os_platform()
+		print(len(p) > 0)
+	`)
+	expectOutput(t, interp, "xuitru")
+}
+
+func TestMathRandom(t *testing.T) {
+	interp := run(t, `
+		xuet r = math_random()
+		print(r >= 0.0 && r < 1.0)
+	`)
+	expectOutput(t, interp, "xuitru")
+}
+
+// --- Select statement ---
+
+func TestSelectDefault(t *testing.T) {
+	interp := run(t, `
+		xuet ch = channel(0)
+		xuselect {
+			ch => { print("received") }
+			_ => { print("default") }
+		}
+	`)
+	expectOutput(t, interp, "default")
+}
+
+func TestSelectRecv(t *testing.T) {
+	interp := run(t, `
+		xuet ch = channel(1)
+		send(ch, 42)
+		xuselect {
+			ch => { print(it) }
+			_ => { print("default") }
+		}
+	`)
+	expectOutput(t, interp, "42")
+}

@@ -20,6 +20,8 @@ func Execute(args []string) error {
 		return runFmt(args[1:])
 	case "test":
 		return runTest(args[1:])
+	case "vet":
+		return runVet(args[1:])
 	case "lsp":
 		return runLsp()
 	case "version":
@@ -43,6 +45,7 @@ Commands:
   run <file.xpp>      Compile and run a Xuesos++ source file
   repl                 Start interactive REPL
   test [dir]           Run test files (*_test.xpp)
+  vet [dir]            Run static analysis on .xpp files
   fmt <file.xpp>       Format a source file
   version              Show compiler version
   help                 Show this help message`)

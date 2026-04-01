@@ -262,6 +262,22 @@ func (s *XudeferStatement) stmtNode()               {}
 func (s *XudeferStatement) TokenPos() lexer.Position { return s.Pos }
 func (s *XudeferStatement) nodeType() string         { return "XudeferStatement" }
 
+// XuselectStatement: xuselect { ch => { ... } _ => { ... } }
+type XuselectStatement struct {
+	Pos   lexer.Position
+	Cases []SelectCase
+}
+
+type SelectCase struct {
+	Channel   Expression     // channel expression for recv, nil for default
+	IsDefault bool
+	Body      *BlockStatement
+}
+
+func (s *XuselectStatement) stmtNode()               {}
+func (s *XuselectStatement) TokenPos() lexer.Position { return s.Pos }
+func (s *XuselectStatement) nodeType() string         { return "XuselectStatement" }
+
 // --- Expressions ---
 
 // Identifier: foo, bar, self

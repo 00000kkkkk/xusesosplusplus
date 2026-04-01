@@ -6,9 +6,12 @@ import (
 	"fmt"
 	"io"
 	"math"
+	"math/rand"
 	"net/http"
 	"os"
 	"path/filepath"
+	"reflect"
+	"runtime"
 	"strconv"
 	"strings"
 	"sync"
@@ -1073,6 +1076,281 @@ func (i *Interpreter) registerBuiltins() {
 		mu.Unlock()
 		return NullValue(), nil
 	}}, false)
+
+	// benchmark(name, func, iterations) — run a function N times and print timing
+	i.globals.Define("benchmark", &Value{Type: VAL_BUILTIN, BuiltinVal: func(args []*Value) (*Value, error) {
+		if len(args) < 2 {
+			return nil, fmt.Errorf("benchmark() takes name, function, and optional iterations")
+		}
+		name := args[0].String()
+		fn := args[1]
+		iterations := int64(1000)
+		if len(args) > 2 && args[2].Type == VAL_INT {
+			iterations = args[2].IntVal
+		}
+
+		if fn.Type != VAL_FUNCTION && fn.Type != VAL_BUILTIN {
+			return nil, fmt.Errorf("benchmark() second argument must be a function")
+		}
+
+		start := time.Now()
+		for j := int64(0); j < iterations; j++ {
+			if fn.Type == VAL_BUILTIN {
+				_, _ = fn.BuiltinVal(nil)
+			} else {
+				body := fn.FuncVal.Body.(*parser.BlockStatement)
+				env := NewEnclosedEnvironment(fn.FuncVal.Closure)
+				_, _ = i.execBlock(body, env)
+			}
+		}
+		elapsed := time.Since(start)
+		nsPerOp := elapsed.Nanoseconds() / iterations
+
+		line := fmt.Sprintf("benchmark %s: %d iterations, %s total, %d ns/op", name, iterations, elapsed.Round(time.Microsecond), nsPerOp)
+		fmt.Println(line)
+		i.output = append(i.output, line)
+		return NullValue(), nil
+	}}, false)
+
+	// time_now() — returns current time in milliseconds
+	i.globals.Define("time_now", &Value{Type: VAL_BUILTIN, BuiltinVal: func(args []*Value) (*Value, error) {
+		return IntVal(time.Now().UnixMilli()), nil
+	}}, false)
+
+	// time_since(start_ms) — returns elapsed milliseconds since start
+	i.globals.Define("time_since", &Value{Type: VAL_BUILTIN, BuiltinVal: func(args []*Value) (*Value, error) {
+		if len(args) != 1 || args[0].Type != VAL_INT {
+			return nil, fmt.Errorf("time_since() takes 1 int argument (start milliseconds)")
+		}
+		elapsed := time.Now().UnixMilli() - args[0].IntVal
+		return IntVal(elapsed), nil
+	}}, false)
+
+	// --- String functions ---
+
+	// repeat(str, n) — repeat string n times
+	i.globals.Define("repeat", &Value{Type: VAL_BUILTIN, BuiltinVal: func(args []*Value) (*Value, error) {
+		if len(args) != 2 || args[0].Type != VAL_STRING || args[1].Type != VAL_INT {
+			return nil, fmt.Errorf("repeat() takes string and int")
+		}
+		return StringVal(strings.Repeat(args[0].StringVal, int(args[1].IntVal))), nil
+	}}, false)
+
+	// pad_left(str, length, char) — pad string on the left
+	i.globals.Define("pad_left", &Value{Type: VAL_BUILTIN, BuiltinVal: func(args []*Value) (*Value, error) {
+		if len(args) != 3 || args[0].Type != VAL_STRING || args[1].Type != VAL_INT || args[2].Type != VAL_STRING {
+			return nil, fmt.Errorf("pad_left() takes string, int, string")
+		}
+		s := args[0].StringVal
+		target := int(args[1].IntVal)
+		pad := args[2].StringVal
+		for len(s) < target {
+			s = pad + s
+		}
+		return StringVal(s[:target]), nil
+	}}, false)
+
+	// pad_right(str, length, char)
+	i.globals.Define("pad_right", &Value{Type: VAL_BUILTIN, BuiltinVal: func(args []*Value) (*Value, error) {
+		if len(args) != 3 || args[0].Type != VAL_STRING || args[1].Type != VAL_INT || args[2].Type != VAL_STRING {
+			return nil, fmt.Errorf("pad_right() takes string, int, string")
+		}
+		s := args[0].StringVal
+		target := int(args[1].IntVal)
+		pad := args[2].StringVal
+		for len(s) < target {
+			s = s + pad
+		}
+		return StringVal(s[:target]), nil
+	}}, false)
+
+	// count(str, substr) — count occurrences
+	i.globals.Define("count", &Value{Type: VAL_BUILTIN, BuiltinVal: func(args []*Value) (*Value, error) {
+		if len(args) != 2 || args[0].Type != VAL_STRING || args[1].Type != VAL_STRING {
+			return nil, fmt.Errorf("count() takes 2 strings")
+		}
+		return IntVal(int64(strings.Count(args[0].StringVal, args[1].StringVal))), nil
+	}}, false)
+
+	// reverse(str_or_arr) — reverse string or array
+	i.globals.Define("reverse", &Value{Type: VAL_BUILTIN, BuiltinVal: func(args []*Value) (*Value, error) {
+		if len(args) != 1 {
+			return nil, fmt.Errorf("reverse() takes 1 argument")
+		}
+		switch args[0].Type {
+		case VAL_STRING:
+			runes := []rune(args[0].StringVal)
+			for ii, j := 0, len(runes)-1; ii < j; ii, j = ii+1, j-1 {
+				runes[ii], runes[j] = runes[j], runes[ii]
+			}
+			return StringVal(string(runes)), nil
+		case VAL_ARRAY:
+			arr := args[0].ArrayVal
+			result := make([]*Value, len(arr))
+			for ii, j := 0, len(arr)-1; j >= 0; ii, j = ii+1, j-1 {
+				result[ii] = arr[j]
+			}
+			return ArrayValue(result), nil
+		default:
+			return nil, fmt.Errorf("reverse() takes string or array")
+		}
+	}}, false)
+
+	// --- Array functions ---
+
+	// sort_arr(arr) — sort array of ints/strings (returns new sorted array)
+	i.globals.Define("sort_arr", &Value{Type: VAL_BUILTIN, BuiltinVal: func(args []*Value) (*Value, error) {
+		if len(args) != 1 || args[0].Type != VAL_ARRAY {
+			return nil, fmt.Errorf("sort_arr() takes 1 array argument")
+		}
+		arr := make([]*Value, len(args[0].ArrayVal))
+		copy(arr, args[0].ArrayVal)
+		// Simple bubble sort
+		for ii := 0; ii < len(arr); ii++ {
+			for j := 0; j < len(arr)-1-ii; j++ {
+				swap := false
+				if arr[j].Type == VAL_INT && arr[j+1].Type == VAL_INT {
+					swap = arr[j].IntVal > arr[j+1].IntVal
+				} else if arr[j].Type == VAL_STRING && arr[j+1].Type == VAL_STRING {
+					swap = arr[j].StringVal > arr[j+1].StringVal
+				}
+				if swap {
+					arr[j], arr[j+1] = arr[j+1], arr[j]
+				}
+			}
+		}
+		return ArrayValue(arr), nil
+	}}, false)
+
+	// unique(arr) — remove duplicates
+	i.globals.Define("unique", &Value{Type: VAL_BUILTIN, BuiltinVal: func(args []*Value) (*Value, error) {
+		if len(args) != 1 || args[0].Type != VAL_ARRAY {
+			return nil, fmt.Errorf("unique() takes 1 array argument")
+		}
+		seen := make(map[string]bool)
+		var result []*Value
+		for _, v := range args[0].ArrayVal {
+			key := v.Inspect()
+			if !seen[key] {
+				seen[key] = true
+				result = append(result, v)
+			}
+		}
+		return ArrayValue(result), nil
+	}}, false)
+
+	// flatten(arr) — flatten nested arrays one level
+	i.globals.Define("flatten", &Value{Type: VAL_BUILTIN, BuiltinVal: func(args []*Value) (*Value, error) {
+		if len(args) != 1 || args[0].Type != VAL_ARRAY {
+			return nil, fmt.Errorf("flatten() takes 1 array argument")
+		}
+		var result []*Value
+		for _, v := range args[0].ArrayVal {
+			if v.Type == VAL_ARRAY {
+				result = append(result, v.ArrayVal...)
+			} else {
+				result = append(result, v)
+			}
+		}
+		return ArrayValue(result), nil
+	}}, false)
+
+	// zip(arr1, arr2) — zip two arrays into array of tuples
+	i.globals.Define("zip", &Value{Type: VAL_BUILTIN, BuiltinVal: func(args []*Value) (*Value, error) {
+		if len(args) != 2 || args[0].Type != VAL_ARRAY || args[1].Type != VAL_ARRAY {
+			return nil, fmt.Errorf("zip() takes 2 arrays")
+		}
+		a, b := args[0].ArrayVal, args[1].ArrayVal
+		minLen := len(a)
+		if len(b) < minLen {
+			minLen = len(b)
+		}
+		result := make([]*Value, minLen)
+		for idx := 0; idx < minLen; idx++ {
+			result[idx] = TupleValue([]*Value{a[idx], b[idx]})
+		}
+		return ArrayValue(result), nil
+	}}, false)
+
+	// enumerate(arr) — returns array of (index, value) tuples
+	i.globals.Define("enumerate", &Value{Type: VAL_BUILTIN, BuiltinVal: func(args []*Value) (*Value, error) {
+		if len(args) != 1 || args[0].Type != VAL_ARRAY {
+			return nil, fmt.Errorf("enumerate() takes 1 array")
+		}
+		result := make([]*Value, len(args[0].ArrayVal))
+		for idx, v := range args[0].ArrayVal {
+			result[idx] = TupleValue([]*Value{IntVal(int64(idx)), v})
+		}
+		return ArrayValue(result), nil
+	}}, false)
+
+	// --- Math functions ---
+
+	// math_random() — random float between 0 and 1
+	i.globals.Define("math_random", &Value{Type: VAL_BUILTIN, BuiltinVal: func(args []*Value) (*Value, error) {
+		return FloatVal(rand.Float64()), nil
+	}}, false)
+
+	// math_rand_int(min, max) — random int in range [min, max)
+	i.globals.Define("math_rand_int", &Value{Type: VAL_BUILTIN, BuiltinVal: func(args []*Value) (*Value, error) {
+		if len(args) != 2 || args[0].Type != VAL_INT || args[1].Type != VAL_INT {
+			return nil, fmt.Errorf("math_rand_int() takes 2 int arguments")
+		}
+		mn := args[0].IntVal
+		mx := args[1].IntVal
+		if mn >= mx {
+			return IntVal(mn), nil
+		}
+		return IntVal(mn + rand.Int63n(mx-mn)), nil
+	}}, false)
+
+	// math_max_int — max int64 value
+	i.globals.Define("math_max_int", &Value{Type: VAL_BUILTIN, BuiltinVal: func(args []*Value) (*Value, error) {
+		return IntVal(9223372036854775807), nil
+	}}, false)
+
+	// math_min_int
+	i.globals.Define("math_min_int", &Value{Type: VAL_BUILTIN, BuiltinVal: func(args []*Value) (*Value, error) {
+		return IntVal(-9223372036854775807), nil
+	}}, false)
+
+	// --- OS/System functions ---
+
+	// os_setenv(key, value)
+	i.globals.Define("os_setenv", &Value{Type: VAL_BUILTIN, BuiltinVal: func(args []*Value) (*Value, error) {
+		if len(args) != 2 || args[0].Type != VAL_STRING || args[1].Type != VAL_STRING {
+			return nil, fmt.Errorf("os_setenv() takes 2 string arguments")
+		}
+		return NullValue(), os.Setenv(args[0].StringVal, args[1].StringVal)
+	}}, false)
+
+	// os_cwd() — current working directory
+	i.globals.Define("os_cwd", &Value{Type: VAL_BUILTIN, BuiltinVal: func(args []*Value) (*Value, error) {
+		dir, err := os.Getwd()
+		if err != nil {
+			return nil, err
+		}
+		return StringVal(dir), nil
+	}}, false)
+
+	// os_hostname()
+	i.globals.Define("os_hostname", &Value{Type: VAL_BUILTIN, BuiltinVal: func(args []*Value) (*Value, error) {
+		name, err := os.Hostname()
+		if err != nil {
+			return nil, err
+		}
+		return StringVal(name), nil
+	}}, false)
+
+	// os_platform() — "windows", "linux", "darwin"
+	i.globals.Define("os_platform", &Value{Type: VAL_BUILTIN, BuiltinVal: func(args []*Value) (*Value, error) {
+		return StringVal(runtime.GOOS), nil
+	}}, false)
+
+	// os_arch() — "amd64", "arm64"
+	i.globals.Define("os_arch", &Value{Type: VAL_BUILTIN, BuiltinVal: func(args []*Value) (*Value, error) {
+		return StringVal(runtime.GOARCH), nil
+	}}, false)
 }
 
 // AddTestBuiltins adds assert functions for test files.
@@ -1217,6 +1495,8 @@ func (i *Interpreter) execStatement(stmt parser.Statement, env *Environment) (*V
 	case *parser.XudeferStatement:
 		i.deferStack = append(i.deferStack, deferredCall{expr: s.Call, env: env})
 		return nil, nil
+	case *parser.XuselectStatement:
+		return i.execXuselect(s, env)
 	case *parser.ExpressionStatement:
 		return i.evalExpression(s.Expr, env)
 	case *parser.BlockStatement:
@@ -1224,6 +1504,48 @@ func (i *Interpreter) execStatement(stmt parser.Statement, env *Environment) (*V
 	default:
 		return nil, fmt.Errorf("unknown statement type: %T", stmt)
 	}
+}
+
+func (i *Interpreter) execXuselect(s *parser.XuselectStatement, env *Environment) (*Value, error) {
+	var selectCases []reflect.SelectCase
+	var bodyMap []int // maps reflect select case index to our case index
+
+	for idx, c := range s.Cases {
+		if c.IsDefault {
+			selectCases = append(selectCases, reflect.SelectCase{
+				Dir: reflect.SelectDefault,
+			})
+			bodyMap = append(bodyMap, idx)
+		} else {
+			chVal, err := i.evalExpression(c.Channel, env)
+			if err != nil {
+				return nil, err
+			}
+			if chVal.Type != VAL_CHANNEL {
+				return nil, fmt.Errorf("xuselect case must be a channel, got %s", chVal.Type)
+			}
+			selectCases = append(selectCases, reflect.SelectCase{
+				Dir:  reflect.SelectRecv,
+				Chan: reflect.ValueOf(chVal.ChannelVal),
+			})
+			bodyMap = append(bodyMap, idx)
+		}
+	}
+
+	chosen, recvVal, _ := reflect.Select(selectCases)
+	caseIdx := bodyMap[chosen]
+	c := s.Cases[caseIdx]
+
+	blockEnv := NewEnclosedEnvironment(env)
+
+	// If we received a value from a channel, bind it as "it"
+	if !c.IsDefault && recvVal.IsValid() {
+		if val, ok := recvVal.Interface().(*Value); ok {
+			blockEnv.Define("it", val, false)
+		}
+	}
+
+	return i.execBlock(c.Body, blockEnv)
 }
 
 func (i *Interpreter) execBlock(block *parser.BlockStatement, env *Environment) (*Value, error) {
