@@ -1,0 +1,44 @@
+// Crypto and encoding in Xuesos++
+
+xuen main() {
+    print("=== Crypto Demo ===")
+
+    // SHA-256 hashing
+    xuet password = "mySecretPassword123"
+    xuet hash = sha256(password)
+    print("SHA-256: {hash}")
+    print("Hash length: {len(hash)} chars")
+
+    // MD5 hashing
+    xuet md5 = md5_hash("hello world")
+    print("MD5: {md5}")
+
+    // Base64
+    xuet original = "Hello, Xuesos++ World!"
+    xuet encoded = base64_encode(original)
+    print("Base64: {encoded}")
+    xuet decoded = base64_decode(encoded)
+    print("Decoded: {decoded}")
+    print("Match: {original == decoded}")
+
+    // URL encoding
+    xuet url_data = "name=Xuesos++&type=language&emoji=🔥"
+    xuet url_enc = url_encode(url_data)
+    print("URL encoded: {url_enc}")
+    xuet url_dec = url_decode(url_enc)
+    print("URL decoded: {url_dec}")
+
+    print("\n=== Regex Demo ===")
+
+    // Regex
+    xuet text = "Contact: john@email.com or jane@work.org"
+    xuet emails = regex_find_all("[a-zA-Z]+@[a-zA-Z]+\\.[a-z]+", text)
+    print("Found emails: {emails}")
+
+    // Regex replace
+    xuet censored = regex_replace("[0-9]{4}", "Card: 1234-5678-9012-3456", "****")
+    print("Censored: {censored}")
+
+    // Regex match
+    print("Is email: {regex_match("^[a-zA-Z]+@[a-zA-Z]+\\.[a-z]+$", "test@example.com")}")
+}

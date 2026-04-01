@@ -2,15 +2,21 @@ package interpreter
 
 import (
 	"bufio"
+	"crypto/md5"
+	"crypto/sha256"
+	"encoding/base64"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"io"
 	"math"
 	"math/rand"
 	"net/http"
+	"net/url"
 	"os"
 	"path/filepath"
 	"reflect"
+	"regexp"
 	"runtime"
 	"strconv"
 	"strings"
@@ -1351,6 +1357,161 @@ func (i *Interpreter) registerBuiltins() {
 	i.globals.Define("os_arch", &Value{Type: VAL_BUILTIN, BuiltinVal: func(args []*Value) (*Value, error) {
 		return StringVal(runtime.GOARCH), nil
 	}}, false)
+
+	// --- Regex built-ins ---
+
+	// regex_match(pattern, str) — check if string matches regex
+	i.globals.Define("regex_match", &Value{Type: VAL_BUILTIN, BuiltinVal: func(args []*Value) (*Value, error) {
+		if len(args) != 2 || args[0].Type != VAL_STRING || args[1].Type != VAL_STRING {
+			return nil, fmt.Errorf("regex_match() takes pattern and string")
+		}
+		matched, err := regexp.MatchString(args[0].StringVal, args[1].StringVal)
+		if err != nil {
+			return nil, fmt.Errorf("regex_match: %s", err)
+		}
+		return BoolValue(matched), nil
+	}}, false)
+
+	// regex_find(pattern, str) — find first match
+	i.globals.Define("regex_find", &Value{Type: VAL_BUILTIN, BuiltinVal: func(args []*Value) (*Value, error) {
+		if len(args) != 2 || args[0].Type != VAL_STRING || args[1].Type != VAL_STRING {
+			return nil, fmt.Errorf("regex_find() takes pattern and string")
+		}
+		re, err := regexp.Compile(args[0].StringVal)
+		if err != nil {
+			return nil, fmt.Errorf("regex_find: %s", err)
+		}
+		match := re.FindString(args[1].StringVal)
+		if match == "" {
+			return NullValue(), nil
+		}
+		return StringVal(match), nil
+	}}, false)
+
+	// regex_find_all(pattern, str) — find all matches
+	i.globals.Define("regex_find_all", &Value{Type: VAL_BUILTIN, BuiltinVal: func(args []*Value) (*Value, error) {
+		if len(args) != 2 || args[0].Type != VAL_STRING || args[1].Type != VAL_STRING {
+			return nil, fmt.Errorf("regex_find_all() takes pattern and string")
+		}
+		re, err := regexp.Compile(args[0].StringVal)
+		if err != nil {
+			return nil, fmt.Errorf("regex_find_all: %s", err)
+		}
+		matches := re.FindAllString(args[1].StringVal, -1)
+		elems := make([]*Value, len(matches))
+		for idx, m := range matches {
+			elems[idx] = StringVal(m)
+		}
+		return ArrayValue(elems), nil
+	}}, false)
+
+	// regex_replace(pattern, str, replacement) — replace matches
+	i.globals.Define("regex_replace", &Value{Type: VAL_BUILTIN, BuiltinVal: func(args []*Value) (*Value, error) {
+		if len(args) != 3 || args[0].Type != VAL_STRING || args[1].Type != VAL_STRING || args[2].Type != VAL_STRING {
+			return nil, fmt.Errorf("regex_replace() takes pattern, string, replacement")
+		}
+		re, err := regexp.Compile(args[0].StringVal)
+		if err != nil {
+			return nil, fmt.Errorf("regex_replace: %s", err)
+		}
+		return StringVal(re.ReplaceAllString(args[1].StringVal, args[2].StringVal)), nil
+	}}, false)
+
+	// --- Crypto built-ins ---
+
+	// sha256(str) — returns SHA-256 hash as hex string
+	i.globals.Define("sha256", &Value{Type: VAL_BUILTIN, BuiltinVal: func(args []*Value) (*Value, error) {
+		if len(args) != 1 || args[0].Type != VAL_STRING {
+			return nil, fmt.Errorf("sha256() takes 1 string argument")
+		}
+		h := sha256.Sum256([]byte(args[0].StringVal))
+		return StringVal(hex.EncodeToString(h[:])), nil
+	}}, false)
+
+	// md5_hash(str) — returns MD5 hash as hex string
+	i.globals.Define("md5_hash", &Value{Type: VAL_BUILTIN, BuiltinVal: func(args []*Value) (*Value, error) {
+		if len(args) != 1 || args[0].Type != VAL_STRING {
+			return nil, fmt.Errorf("md5_hash() takes 1 string argument")
+		}
+		h := md5.Sum([]byte(args[0].StringVal))
+		return StringVal(hex.EncodeToString(h[:])), nil
+	}}, false)
+
+	// --- Encoding built-ins ---
+
+	// base64_encode(str) — encode string to base64
+	i.globals.Define("base64_encode", &Value{Type: VAL_BUILTIN, BuiltinVal: func(args []*Value) (*Value, error) {
+		if len(args) != 1 || args[0].Type != VAL_STRING {
+			return nil, fmt.Errorf("base64_encode() takes 1 string argument")
+		}
+		return StringVal(base64.StdEncoding.EncodeToString([]byte(args[0].StringVal))), nil
+	}}, false)
+
+	// base64_decode(str) — decode base64 string
+	i.globals.Define("base64_decode", &Value{Type: VAL_BUILTIN, BuiltinVal: func(args []*Value) (*Value, error) {
+		if len(args) != 1 || args[0].Type != VAL_STRING {
+			return nil, fmt.Errorf("base64_decode() takes 1 string argument")
+		}
+		data, err := base64.StdEncoding.DecodeString(args[0].StringVal)
+		if err != nil {
+			return nil, fmt.Errorf("base64_decode: %s", err)
+		}
+		return StringVal(string(data)), nil
+	}}, false)
+
+	// url_encode(str)
+	i.globals.Define("url_encode", &Value{Type: VAL_BUILTIN, BuiltinVal: func(args []*Value) (*Value, error) {
+		if len(args) != 1 || args[0].Type != VAL_STRING {
+			return nil, fmt.Errorf("url_encode() takes 1 string argument")
+		}
+		return StringVal(url.QueryEscape(args[0].StringVal)), nil
+	}}, false)
+
+	// url_decode(str)
+	i.globals.Define("url_decode", &Value{Type: VAL_BUILTIN, BuiltinVal: func(args []*Value) (*Value, error) {
+		if len(args) != 1 || args[0].Type != VAL_STRING {
+			return nil, fmt.Errorf("url_decode() takes 1 string argument")
+		}
+		decoded, err := url.QueryUnescape(args[0].StringVal)
+		if err != nil {
+			return nil, fmt.Errorf("url_decode: %s", err)
+		}
+		return StringVal(decoded), nil
+	}}, false)
+
+	// type_of(x) — alias for type(), returns the type name as a string
+	i.globals.Define("type_of", &Value{Type: VAL_BUILTIN, BuiltinVal: func(args []*Value) (*Value, error) {
+		if len(args) != 1 {
+			return nil, fmt.Errorf("type_of() takes exactly 1 argument, got %d", len(args))
+		}
+		return StringVal(args[0].Type.String()), nil
+	}}, false)
+
+	// format(template, args...) — replace {} placeholders with arguments
+	i.globals.Define("format", &Value{Type: VAL_BUILTIN, BuiltinVal: func(args []*Value) (*Value, error) {
+		if len(args) == 0 {
+			return StringVal(""), nil
+		}
+		result := args[0].String()
+		for idx := 1; idx < len(args); idx++ {
+			result = strings.Replace(result, "{}", args[idx].String(), 1)
+		}
+		return StringVal(result), nil
+	}}, false)
+
+	// printf(template, args...) — formatted print
+	i.globals.Define("printf", &Value{Type: VAL_BUILTIN, BuiltinVal: func(args []*Value) (*Value, error) {
+		if len(args) == 0 {
+			return NullValue(), nil
+		}
+		result := args[0].String()
+		for idx := 1; idx < len(args); idx++ {
+			result = strings.Replace(result, "{}", args[idx].String(), 1)
+		}
+		fmt.Print(result)
+		i.output = append(i.output, result)
+		return NullValue(), nil
+	}}, false)
 }
 
 // AddTestBuiltins adds assert functions for test files.
@@ -1471,6 +1632,8 @@ func (i *Interpreter) execStatement(stmt parser.Statement, env *Environment) (*V
 		return i.execXuif(s, env)
 	case *parser.XuiorStatement:
 		return i.execXuior(s, env)
+	case *parser.XuiorClassicStatement:
+		return i.execXuiorClassic(s, env)
 	case *parser.XuileStatement:
 		return i.execXuile(s, env)
 	case *parser.XuiructStatement:
@@ -1726,6 +1889,54 @@ func (i *Interpreter) execXuior(s *parser.XuiorStatement, env *Environment) (*Va
 		}
 	}
 
+	return nil, nil
+}
+
+func (i *Interpreter) execXuiorClassic(s *parser.XuiorClassicStatement, env *Environment) (*Value, error) {
+	loopEnv := NewEnclosedEnvironment(env)
+
+	// Execute init
+	if s.Init != nil {
+		_, err := i.execStatement(s.Init, loopEnv)
+		if err != nil {
+			return nil, err
+		}
+	}
+
+	for {
+		// Check condition
+		cond, err := i.evalExpression(s.Condition, loopEnv)
+		if err != nil {
+			return nil, err
+		}
+		if !cond.IsTruthy() {
+			break
+		}
+
+		// Execute body
+		bodyEnv := NewEnclosedEnvironment(loopEnv)
+		val, err := i.execBlock(s.Body, bodyEnv)
+		if err != nil {
+			return nil, err
+		}
+		if val != nil {
+			if val.Type == VAL_BREAK {
+				break
+			}
+			if val.Type == VAL_RETURN {
+				return val, nil
+			}
+			// VAL_CONTINUE: just continue the loop
+		}
+
+		// Execute post
+		if s.Post != nil {
+			_, err := i.execStatement(s.Post, loopEnv)
+			if err != nil {
+				return nil, err
+			}
+		}
+	}
 	return nil, nil
 }
 

@@ -227,6 +227,27 @@ func (c *Checker) registerBuiltins() {
 	// Pointer/memory
 	c.scope.define("alloc", &FuncType{ReturnType: &ArrayType{ElementType: TypeInt}}, false)
 	c.scope.define("sizeof", &FuncType{ReturnType: TypeInt}, false)
+
+	// Variadic/format built-ins
+	c.scope.define("type_of", &FuncType{ReturnType: TypeStr}, false)
+	c.scope.define("format", &FuncType{ReturnType: TypeStr}, false)
+	c.scope.define("printf", &FuncType{ReturnType: TypeVoid}, false)
+
+	// Regex built-ins
+	c.scope.define("regex_match", &FuncType{ReturnType: TypeBool}, false)
+	c.scope.define("regex_find", &FuncType{ReturnType: TypeStr}, false)
+	c.scope.define("regex_find_all", &FuncType{ReturnType: &ArrayType{ElementType: TypeStr}}, false)
+	c.scope.define("regex_replace", &FuncType{ReturnType: TypeStr}, false)
+
+	// Crypto built-ins
+	c.scope.define("sha256", &FuncType{ReturnType: TypeStr}, false)
+	c.scope.define("md5_hash", &FuncType{ReturnType: TypeStr}, false)
+
+	// Encoding built-ins
+	c.scope.define("base64_encode", &FuncType{ReturnType: TypeStr}, false)
+	c.scope.define("base64_decode", &FuncType{ReturnType: TypeStr}, false)
+	c.scope.define("url_encode", &FuncType{ReturnType: TypeStr}, false)
+	c.scope.define("url_decode", &FuncType{ReturnType: TypeStr}, false)
 }
 
 // Check type-checks a program and returns any errors.
@@ -322,6 +343,8 @@ func (c *Checker) checkStatement(stmt parser.Statement) {
 		c.checkXuif(s)
 	case *parser.XuiorStatement:
 		c.checkXuior(s)
+	case *parser.XuiorClassicStatement:
+		c.checkXuiorClassic(s)
 	case *parser.XuileStatement:
 		c.checkXuile(s)
 	case *parser.XuiructStatement:
@@ -535,6 +558,22 @@ func (c *Checker) checkXuior(s *parser.XuiorStatement) {
 	for _, stmt := range s.Body.Statements {
 		c.checkStatement(stmt)
 	}
+	c.scope = oldScope
+}
+
+func (c *Checker) checkXuiorClassic(s *parser.XuiorClassicStatement) {
+	oldScope := c.scope
+	c.scope = newScope(oldScope)
+	if s.Init != nil {
+		c.checkStatement(s.Init)
+	}
+	if s.Condition != nil {
+		c.checkExpression(s.Condition)
+	}
+	if s.Post != nil {
+		c.checkStatement(s.Post)
+	}
+	c.checkBlock(s.Body)
 	c.scope = oldScope
 }
 

@@ -389,6 +389,16 @@ func (p *Parser) parseXuiorStatement() Statement {
 	pos := p.advance().Pos // consume xuior
 
 	p.expect(lexer.TOKEN_LPAREN)
+
+	// Check if this is C-style for (starts with xuiar/xuet) or range-based (ident xuin ...)
+	if p.current().Type == lexer.TOKEN_XUIAR || p.current().Type == lexer.TOKEN_XUET {
+		// Could be C-style: xuior (xuiar i = 0 : cond : post) { ... }
+		// or range-based: xuior (xuiar ... xuin ...) — but range doesn't use xuiar/xuet
+		// So if we see xuiar/xuet, it's always C-style.
+		return p.parseXuiorClassic(pos)
+	}
+
+	// Range-based: xuior (varName xuin iterable) { ... }
 	varName := p.expect(lexer.TOKEN_IDENT).Literal
 	p.expect(lexer.TOKEN_XUIN)
 	iterable := p.parseExpression(LOWEST)
@@ -401,6 +411,34 @@ func (p *Parser) parseXuiorStatement() Statement {
 		Variable: varName,
 		Iterable: iterable,
 		Body:     body,
+	}
+}
+
+func (p *Parser) parseXuiorClassic(pos lexer.Position) Statement {
+	// Parse init statement (e.g., xuiar i = 0)
+	init := p.parseStatement()
+
+	// Expect colon separator
+	p.expect(lexer.TOKEN_COLON)
+
+	// Parse condition expression
+	cond := p.parseExpression(LOWEST)
+
+	// Expect colon separator
+	p.expect(lexer.TOKEN_COLON)
+
+	// Parse post statement (e.g., i = i + 1)
+	post := p.parseStatement()
+
+	p.expect(lexer.TOKEN_RPAREN)
+	body := p.parseBlockStatement()
+
+	return &XuiorClassicStatement{
+		Pos:       pos,
+		Init:      init,
+		Condition: cond,
+		Post:      post,
+		Body:      body,
 	}
 }
 

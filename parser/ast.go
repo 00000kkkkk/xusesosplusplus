@@ -160,6 +160,19 @@ func (s *XuiorStatement) stmtNode()                {}
 func (s *XuiorStatement) TokenPos() lexer.Position  { return s.Pos }
 func (s *XuiorStatement) nodeType() string          { return "XuiorStatement" }
 
+// XuiorClassicStatement: xuior (init : cond : post) { body }
+type XuiorClassicStatement struct {
+	Pos       lexer.Position
+	Init      Statement
+	Condition Expression
+	Post      Statement
+	Body      *BlockStatement
+}
+
+func (s *XuiorClassicStatement) stmtNode()               {}
+func (s *XuiorClassicStatement) TokenPos() lexer.Position { return s.Pos }
+func (s *XuiorClassicStatement) nodeType() string         { return "XuiorClassicStatement" }
+
 // XuileStatement: xuile (cond) { body }
 type XuileStatement struct {
 	Pos       lexer.Position

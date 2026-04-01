@@ -1,0 +1,43 @@
+// Advanced Xuesos++ features showcase
+
+// C-style for loop
+xuen sum_range(start int, end int) int {
+    xuiar total = 0
+    xuior (xuiar i = start : i < end : i = i + 1) {
+        total = total + i
+    }
+    xueturn total
+}
+
+// Type switch
+xuen describe_type(x) str {
+    xuiatch (type(x)) {
+        "int" => xueturn "integer: " + to_str(x)
+        "str" => xueturn "string: " + x
+        "bool" => xueturn "boolean: " + to_str(x)
+        "array" => xueturn "array of " + to_str(len(x)) + " elements"
+        _ => xueturn "unknown type"
+    }
+    xueturn "unreachable"
+}
+
+// Formatted output
+xuen greet(name str, age int) {
+    printf("Hello {}! You are {} years old.\n", name, age)
+}
+
+xuen main() {
+    print("=== C-style For ===")
+    print("Sum 1..100: {sum_range(1, 101)}")
+
+    print("\n=== Type Switch ===")
+    print(describe_type(42))
+    print(describe_type("hello"))
+    print(describe_type(xuitru))
+    print(describe_type([1, 2, 3]))
+
+    print("\n=== Format ===")
+    greet("Xuesos", 1)
+    xuet msg = format("{} + {} = {}", 2, 3, 5)
+    print(msg)
+}

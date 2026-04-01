@@ -1494,3 +1494,159 @@ func TestSelectRecv(t *testing.T) {
 	`)
 	expectOutput(t, interp, "42")
 }
+
+// --- Type Switch ---
+
+func TestTypeSwitch(t *testing.T) {
+	interp := run(t, `
+		xuen describe(x) {
+			xuiatch (type(x)) {
+				"int" => print("integer")
+				"str" => print("string")
+				_ => print("other")
+			}
+		}
+		describe(42)
+		describe("hello")
+		describe(xuitru)
+	`)
+	expectOutput(t, interp, "integer", "string", "other")
+}
+
+func TestTypeOfBuiltin(t *testing.T) {
+	interp := run(t, `
+		print(type_of(42))
+		print(type_of("hello"))
+		print(type_of(xuitru))
+		print(type_of(xuinull))
+	`)
+	expectOutput(t, interp, "int", "str", "bool", "null")
+}
+
+// --- C-style For Loop ---
+
+func TestClassicFor(t *testing.T) {
+	interp := run(t, `
+		xuiar sum = 0
+		xuior (xuiar i = 1 : i <= 10 : i = i + 1) {
+			sum = sum + i
+		}
+		print(sum)
+	`)
+	expectOutput(t, interp, "55")
+}
+
+func TestClassicForBreak(t *testing.T) {
+	interp := run(t, `
+		xuior (xuiar i = 0 : i < 100 : i = i + 1) {
+			xuif (i == 5) { xuieak }
+			print(i)
+		}
+	`)
+	expectOutput(t, interp, "0", "1", "2", "3", "4")
+}
+
+func TestClassicForContinue(t *testing.T) {
+	interp := run(t, `
+		xuior (xuiar i = 0 : i < 5 : i = i + 1) {
+			xuif (i == 2) { xuitinue }
+			print(i)
+		}
+	`)
+	expectOutput(t, interp, "0", "1", "3", "4")
+}
+
+func TestClassicForNested(t *testing.T) {
+	interp := run(t, `
+		xuiar result = 0
+		xuior (xuiar i = 0 : i < 3 : i = i + 1) {
+			xuior (xuiar j = 0 : j < 3 : j = j + 1) {
+				result = result + 1
+			}
+		}
+		print(result)
+	`)
+	expectOutput(t, interp, "9")
+}
+
+// --- Variadic Functions (format, printf) ---
+
+func TestFormat(t *testing.T) {
+	interp := run(t, `
+		xuet s = format("Hello {} you are {} years old", "Alice", 30)
+		print(s)
+	`)
+	expectOutput(t, interp, "Hello Alice you are 30 years old")
+}
+
+func TestFormatNoArgs(t *testing.T) {
+	interp := run(t, `
+		xuet s = format("no placeholders")
+		print(s)
+	`)
+	expectOutput(t, interp, "no placeholders")
+}
+
+func TestPrintf(t *testing.T) {
+	interp := run(t, `
+		printf("Hello {}", "World")
+	`)
+	expectOutput(t, interp, "Hello World")
+}
+
+// --- Regex built-in tests ---
+
+func TestRegexMatch(t *testing.T) {
+	interp := run(t, `
+		print(regex_match("^hello", "hello world"))
+		print(regex_match("^world", "hello world"))
+	`)
+	expectOutput(t, interp, "xuitru", "xuinia")
+}
+
+func TestRegexFindAll(t *testing.T) {
+	interp := run(t, `
+		xuet matches = regex_find_all("[0-9]+", "abc123def456")
+		print(len(matches))
+		print(matches[0])
+		print(matches[1])
+	`)
+	expectOutput(t, interp, "2", "123", "456")
+}
+
+func TestRegexReplace(t *testing.T) {
+	interp := run(t, `
+		xuet result = regex_replace("[0-9]+", "abc123def456", "NUM")
+		print(result)
+	`)
+	expectOutput(t, interp, "abcNUMdefNUM")
+}
+
+// --- Crypto built-in tests ---
+
+func TestSha256(t *testing.T) {
+	interp := run(t, `
+		xuet hash = sha256("hello")
+		print(len(hash))
+	`)
+	expectOutput(t, interp, "64")
+}
+
+// --- Encoding built-in tests ---
+
+func TestBase64(t *testing.T) {
+	interp := run(t, `
+		xuet encoded = base64_encode("Hello, World!")
+		xuet decoded = base64_decode(encoded)
+		print(decoded)
+	`)
+	expectOutput(t, interp, "Hello, World!")
+}
+
+func TestUrlEncode(t *testing.T) {
+	interp := run(t, `
+		xuet encoded = url_encode("hello world&foo=bar")
+		print(contains(encoded, "+") || contains(encoded, "%20"))
+	`)
+	expectOutput(t, interp, "xuitru")
+}
