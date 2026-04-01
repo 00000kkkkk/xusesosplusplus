@@ -169,6 +169,28 @@ func (c *Checker) registerBuiltins() {
 	c.scope.define("cast_float", &FuncType{ReturnType: TypeFloat}, false)
 	c.scope.define("cast_str", &FuncType{ReturnType: TypeStr}, false)
 	c.scope.define("cast_bool", &FuncType{ReturnType: TypeBool}, false)
+
+	// Tuple built-ins
+	c.scope.define("tuple", &FuncType{ReturnType: TypeVoid}, false)
+	c.scope.define("first", &FuncType{ReturnType: TypeVoid}, false)
+	c.scope.define("second", &FuncType{ReturnType: TypeVoid}, false)
+	c.scope.define("unpack", &FuncType{ReturnType: TypeVoid}, false)
+	c.scope.define("is_error", &FuncType{ReturnType: TypeBool}, false)
+
+	// WaitGroup built-ins
+	c.scope.define("wg_new", &FuncType{ReturnType: TypeInt}, false)
+	c.scope.define("wg_add", &FuncType{ReturnType: TypeVoid}, false)
+	c.scope.define("wg_done", &FuncType{ReturnType: TypeVoid}, false)
+	c.scope.define("wg_wait", &FuncType{ReturnType: TypeVoid}, false)
+
+	// Mutex built-ins
+	c.scope.define("mutex_new", &FuncType{ReturnType: TypeInt}, false)
+	c.scope.define("mutex_lock", &FuncType{ReturnType: TypeVoid}, false)
+	c.scope.define("mutex_unlock", &FuncType{ReturnType: TypeVoid}, false)
+
+	// Test built-ins
+	c.scope.define("assert", &FuncType{ReturnType: TypeVoid}, false)
+	c.scope.define("assert_eq", &FuncType{ReturnType: TypeVoid}, false)
 }
 
 // Check type-checks a program and returns any errors.
@@ -284,6 +306,8 @@ func (c *Checker) checkStatement(stmt parser.Statement) {
 		// valid in loops, no type to check
 	case *parser.XuinterfaceStatement:
 		// registered in first pass, no body to check
+	case *parser.XudeferStatement:
+		c.checkExpression(s.Call)
 	}
 }
 

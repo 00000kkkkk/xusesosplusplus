@@ -191,6 +191,8 @@ func (p *Parser) parseStatement() Statement {
 		stmt = p.parseTryStatement()
 	case lexer.TOKEN_XUINTERFACE:
 		stmt = p.parseXuinterfaceStatement()
+	case lexer.TOKEN_XUDEFER:
+		stmt = p.parseXudeferStatement()
 	default:
 		stmt = p.parseExpressionOrAssignStatement()
 	}
@@ -943,6 +945,12 @@ func (p *Parser) parseTryStatement() Statement {
 		CatchVar:  catchVar,
 		CatchBody: catchBody,
 	}
+}
+
+func (p *Parser) parseXudeferStatement() Statement {
+	pos := p.advance().Pos // consume xudefer
+	expr := p.parseExpression(LOWEST)
+	return &XudeferStatement{Pos: pos, Call: expr}
 }
 
 func (p *Parser) parseMapLiteral() Expression {

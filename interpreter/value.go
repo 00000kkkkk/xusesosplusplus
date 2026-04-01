@@ -27,6 +27,7 @@ const (
 	VAL_RETURN   // wrapper for return values
 	VAL_BREAK    // signal for break
 	VAL_CONTINUE // signal for continue
+	VAL_TUPLE    // tuple for multiple return values
 )
 
 var valueTypeNames = map[ValueType]string{
@@ -45,6 +46,7 @@ var valueTypeNames = map[ValueType]string{
 	VAL_RANGE:        "range",
 	VAL_CHANNEL:      "channel",
 	VAL_POINTER:      "pointer",
+	VAL_TUPLE:        "tuple",
 }
 
 func (v ValueType) String() string {
@@ -73,6 +75,7 @@ type Value struct {
 	ChannelVal  chan *Value
 	PointerVal  *PointerValue
 	ReturnVal   *Value // wrapped value for VAL_RETURN
+	TupleVal    []*Value
 }
 
 // BuiltinFunc is the signature for built-in functions.
@@ -138,6 +141,10 @@ func ContinueSignal() *Value      { return &Value{Type: VAL_CONTINUE} }
 
 func ReturnValue(v *Value) *Value {
 	return &Value{Type: VAL_RETURN, ReturnVal: v}
+}
+
+func TupleValue(elems []*Value) *Value {
+	return &Value{Type: VAL_TUPLE, TupleVal: elems}
 }
 
 func ArrayValue(elements []*Value) *Value {
@@ -223,6 +230,12 @@ func (v *Value) String() string {
 		return "<channel>"
 	case VAL_POINTER:
 		return fmt.Sprintf("<pointer to %s>", v.PointerVal.Name)
+	case VAL_TUPLE:
+		var parts []string
+		for _, e := range v.TupleVal {
+			parts = append(parts, e.Inspect())
+		}
+		return "(" + strings.Join(parts, ", ") + ")"
 	default:
 		return "<unknown>"
 	}

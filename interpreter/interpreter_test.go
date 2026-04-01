@@ -1299,3 +1299,80 @@ func TestCastStr(t *testing.T) {
 	`)
 	expectOutput(t, interp, "42", "3.14")
 }
+
+// --- Tuple (multiple return values) tests ---
+
+func TestTuple(t *testing.T) {
+	interp := run(t, `
+		xuen divide(a int, b int) {
+			xuif (b == 0) {
+				xueturn tuple(0, "division by zero")
+			}
+			xueturn tuple(a / b, "")
+		}
+		xuet result = divide(10, 3)
+		print(first(result))
+		print(second(result))
+	`)
+	expectOutput(t, interp, "3", "")
+}
+
+func TestTupleUnpack(t *testing.T) {
+	interp := run(t, `
+		xuet t = tuple(1, "hello", xuitru)
+		print(unpack(t, 0))
+		print(unpack(t, 1))
+		print(unpack(t, 2))
+	`)
+	expectOutput(t, interp, "1", "hello", "xuitru")
+}
+
+func TestTupleIsError(t *testing.T) {
+	interp := run(t, `
+		xuet t1 = tuple(42, "")
+		xuet t2 = tuple(0, "something went wrong")
+		print(is_error(second(t1)))
+		print(is_error(second(t2)))
+	`)
+	expectOutput(t, interp, "xuinia", "xuitru")
+}
+
+// --- Defer tests ---
+
+func TestDefer(t *testing.T) {
+	interp := run(t, `
+		print("start")
+		xudefer print("deferred 1")
+		xudefer print("deferred 2")
+		print("end")
+	`)
+	expectOutput(t, interp, "start", "end", "deferred 2", "deferred 1")
+}
+
+// --- WaitGroup tests ---
+
+func TestWaitGroup(t *testing.T) {
+	interp := run(t, `
+		xuet wg = wg_new()
+		wg_add(wg, 1)
+		spawn(() => {
+			sleep(1)
+			wg_done(wg)
+		})
+		wg_wait(wg)
+		print("done")
+	`)
+	expectOutput(t, interp, "done")
+}
+
+// --- Mutex tests ---
+
+func TestMutex(t *testing.T) {
+	interp := run(t, `
+		xuet mu = mutex_new()
+		mutex_lock(mu)
+		mutex_unlock(mu)
+		print("ok")
+	`)
+	expectOutput(t, interp, "ok")
+}

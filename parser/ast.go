@@ -252,6 +252,16 @@ func (s *XuinterfaceStatement) stmtNode()               {}
 func (s *XuinterfaceStatement) TokenPos() lexer.Position { return s.Pos }
 func (s *XuinterfaceStatement) nodeType() string         { return "XuinterfaceStatement" }
 
+// XudeferStatement: xudefer expr
+type XudeferStatement struct {
+	Pos  lexer.Position
+	Call Expression // must be a function call
+}
+
+func (s *XudeferStatement) stmtNode()               {}
+func (s *XudeferStatement) TokenPos() lexer.Position { return s.Pos }
+func (s *XudeferStatement) nodeType() string         { return "XudeferStatement" }
+
 // --- Expressions ---
 
 // Identifier: foo, bar, self

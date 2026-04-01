@@ -11,15 +11,27 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/00000kkkkk/xusesosplusplus/parser"
 )
 
+var wgRegistry = make(map[int64]*sync.WaitGroup)
+var wgCounter int64
+var muRegistry = make(map[int64]*sync.Mutex)
+var muCounter int64
+
 // InterfaceDef stores an interface (trait) definition.
 type InterfaceDef struct {
 	Name    string
 	Methods []string // required method names
+}
+
+// deferredCall stores a deferred function call and its environment.
+type deferredCall struct {
+	expr parser.Expression
+	env  *Environment
 }
 
 // Interpreter evaluates an AST.
@@ -29,6 +41,7 @@ type Interpreter struct {
 	interfaceDefs map[string]*InterfaceDef
 	output        []string // captured output for testing
 	Imports       *ImportResolver
+	deferStack    []deferredCall
 }
 
 // New creates a new interpreter with built-in functions.
@@ -37,6 +50,7 @@ func New() *Interpreter {
 		globals:       NewEnvironment(),
 		structDefs:    make(map[string]*StructDef),
 		interfaceDefs: make(map[string]*InterfaceDef),
+		deferStack:    make([]deferredCall, 0),
 	}
 	interp.registerBuiltins()
 	return interp
@@ -47,9 +61,11 @@ func (i *Interpreter) Run(program *parser.Program) error {
 	for _, stmt := range program.Statements {
 		val, err := i.execStatement(stmt, i.globals)
 		if err != nil {
+			i.runDeferred()
 			return err
 		}
 		if val != nil && val.Type == VAL_RETURN {
+			i.runDeferred()
 			return nil
 		}
 	}
@@ -58,11 +74,24 @@ func (i *Interpreter) Run(program *parser.Program) error {
 	if mainVal, ok := i.globals.Get("main"); ok && mainVal.Type == VAL_FUNCTION {
 		_, err := i.callUserFunc(mainVal.FuncVal, nil, &parser.CallExpression{})
 		if err != nil {
+			i.runDeferred()
 			return err
 		}
 	}
 
+	// Execute deferred calls in reverse order
+	i.runDeferred()
+
 	return nil
+}
+
+// runDeferred executes all deferred calls in LIFO order and clears the stack.
+func (i *Interpreter) runDeferred() {
+	for idx := len(i.deferStack) - 1; idx >= 0; idx-- {
+		d := i.deferStack[idx]
+		i.evalExpression(d.expr, d.env)
+	}
+	i.deferStack = nil
 }
 
 // RunLine executes a parsed program for REPL use: no auto-call of main(),
@@ -914,6 +943,163 @@ func (i *Interpreter) registerBuiltins() {
 		}
 		return BoolValue(args[0].IsTruthy()), nil
 	}}, false)
+
+	// --- Tuple built-ins (multiple return values) ---
+
+	// tuple(...) — create a tuple from arguments
+	i.globals.Define("tuple", &Value{Type: VAL_BUILTIN, BuiltinVal: func(args []*Value) (*Value, error) {
+		return TupleValue(args), nil
+	}}, false)
+
+	// first(tuple) — get first element
+	i.globals.Define("first", &Value{Type: VAL_BUILTIN, BuiltinVal: func(args []*Value) (*Value, error) {
+		if len(args) != 1 || args[0].Type != VAL_TUPLE || len(args[0].TupleVal) < 1 {
+			return nil, fmt.Errorf("first() requires a tuple with at least 1 element")
+		}
+		return args[0].TupleVal[0], nil
+	}}, false)
+
+	// second(tuple) — get second element
+	i.globals.Define("second", &Value{Type: VAL_BUILTIN, BuiltinVal: func(args []*Value) (*Value, error) {
+		if len(args) != 1 || args[0].Type != VAL_TUPLE || len(args[0].TupleVal) < 2 {
+			return nil, fmt.Errorf("second() requires a tuple with at least 2 elements")
+		}
+		return args[0].TupleVal[1], nil
+	}}, false)
+
+	// unpack(tuple, index) — get element at index
+	i.globals.Define("unpack", &Value{Type: VAL_BUILTIN, BuiltinVal: func(args []*Value) (*Value, error) {
+		if len(args) != 2 || args[0].Type != VAL_TUPLE || args[1].Type != VAL_INT {
+			return nil, fmt.Errorf("unpack() takes a tuple and an index")
+		}
+		idx := int(args[1].IntVal)
+		if idx < 0 || idx >= len(args[0].TupleVal) {
+			return nil, fmt.Errorf("unpack: index %d out of bounds", idx)
+		}
+		return args[0].TupleVal[idx], nil
+	}}, false)
+
+	// is_error(value) — check if value is an error (null or non-empty string)
+	i.globals.Define("is_error", &Value{Type: VAL_BUILTIN, BuiltinVal: func(args []*Value) (*Value, error) {
+		if len(args) != 1 {
+			return nil, fmt.Errorf("is_error() takes 1 argument")
+		}
+		return BoolValue(args[0].Type == VAL_NULL || (args[0].Type == VAL_STRING && args[0].StringVal != "")), nil
+	}}, false)
+
+	// --- WaitGroup built-ins ---
+
+	// wg_new() — create a new WaitGroup, returns its ID
+	i.globals.Define("wg_new", &Value{Type: VAL_BUILTIN, BuiltinVal: func(args []*Value) (*Value, error) {
+		wgCounter++
+		wgRegistry[wgCounter] = &sync.WaitGroup{}
+		return IntVal(wgCounter), nil
+	}}, false)
+
+	// wg_add(id, n?) — add delta to WaitGroup (default 1)
+	i.globals.Define("wg_add", &Value{Type: VAL_BUILTIN, BuiltinVal: func(args []*Value) (*Value, error) {
+		if len(args) < 1 || args[0].Type != VAL_INT {
+			return nil, fmt.Errorf("wg_add() takes WaitGroup ID")
+		}
+		wg, ok := wgRegistry[args[0].IntVal]
+		if !ok {
+			return nil, fmt.Errorf("invalid WaitGroup")
+		}
+		n := 1
+		if len(args) > 1 && args[1].Type == VAL_INT {
+			n = int(args[1].IntVal)
+		}
+		wg.Add(n)
+		return NullValue(), nil
+	}}, false)
+
+	// wg_done(id) — decrement WaitGroup counter
+	i.globals.Define("wg_done", &Value{Type: VAL_BUILTIN, BuiltinVal: func(args []*Value) (*Value, error) {
+		if len(args) != 1 || args[0].Type != VAL_INT {
+			return nil, fmt.Errorf("wg_done() takes WaitGroup ID")
+		}
+		wg, ok := wgRegistry[args[0].IntVal]
+		if !ok {
+			return nil, fmt.Errorf("invalid WaitGroup")
+		}
+		wg.Done()
+		return NullValue(), nil
+	}}, false)
+
+	// wg_wait(id) — block until WaitGroup counter is zero
+	i.globals.Define("wg_wait", &Value{Type: VAL_BUILTIN, BuiltinVal: func(args []*Value) (*Value, error) {
+		if len(args) != 1 || args[0].Type != VAL_INT {
+			return nil, fmt.Errorf("wg_wait() takes WaitGroup ID")
+		}
+		wg, ok := wgRegistry[args[0].IntVal]
+		if !ok {
+			return nil, fmt.Errorf("invalid WaitGroup")
+		}
+		wg.Wait()
+		return NullValue(), nil
+	}}, false)
+
+	// --- Mutex built-ins ---
+
+	// mutex_new() — create a new Mutex, returns its ID
+	i.globals.Define("mutex_new", &Value{Type: VAL_BUILTIN, BuiltinVal: func(args []*Value) (*Value, error) {
+		muCounter++
+		muRegistry[muCounter] = &sync.Mutex{}
+		return IntVal(muCounter), nil
+	}}, false)
+
+	// mutex_lock(id) — lock the Mutex
+	i.globals.Define("mutex_lock", &Value{Type: VAL_BUILTIN, BuiltinVal: func(args []*Value) (*Value, error) {
+		if len(args) != 1 || args[0].Type != VAL_INT {
+			return nil, fmt.Errorf("mutex_lock() takes Mutex ID")
+		}
+		mu, ok := muRegistry[args[0].IntVal]
+		if !ok {
+			return nil, fmt.Errorf("invalid Mutex")
+		}
+		mu.Lock()
+		return NullValue(), nil
+	}}, false)
+
+	// mutex_unlock(id) — unlock the Mutex
+	i.globals.Define("mutex_unlock", &Value{Type: VAL_BUILTIN, BuiltinVal: func(args []*Value) (*Value, error) {
+		if len(args) != 1 || args[0].Type != VAL_INT {
+			return nil, fmt.Errorf("mutex_unlock() takes Mutex ID")
+		}
+		mu, ok := muRegistry[args[0].IntVal]
+		if !ok {
+			return nil, fmt.Errorf("invalid Mutex")
+		}
+		mu.Unlock()
+		return NullValue(), nil
+	}}, false)
+}
+
+// AddTestBuiltins adds assert functions for test files.
+func (i *Interpreter) AddTestBuiltins() {
+	i.globals.Define("assert", &Value{Type: VAL_BUILTIN, BuiltinVal: func(args []*Value) (*Value, error) {
+		if len(args) < 1 {
+			return nil, fmt.Errorf("assert() takes at least 1 argument")
+		}
+		if !args[0].IsTruthy() {
+			msg := "assertion failed"
+			if len(args) > 1 {
+				msg = args[1].String()
+			}
+			return nil, fmt.Errorf("%s", msg)
+		}
+		return NullValue(), nil
+	}}, false)
+
+	i.globals.Define("assert_eq", &Value{Type: VAL_BUILTIN, BuiltinVal: func(args []*Value) (*Value, error) {
+		if len(args) != 2 {
+			return nil, fmt.Errorf("assert_eq() takes 2 arguments")
+		}
+		if !valuesEqual(args[0], args[1]) {
+			return nil, fmt.Errorf("assert_eq failed: %s != %s", args[0].Inspect(), args[1].Inspect())
+		}
+		return NullValue(), nil
+	}}, false)
 }
 
 func goToXuesos(v interface{}) *Value {
@@ -1028,6 +1214,9 @@ func (i *Interpreter) execStatement(stmt parser.Statement, env *Environment) (*V
 		return i.execTry(s, env)
 	case *parser.XuinterfaceStatement:
 		return i.execXuinterface(s)
+	case *parser.XudeferStatement:
+		i.deferStack = append(i.deferStack, deferredCall{expr: s.Call, env: env})
+		return nil, nil
 	case *parser.ExpressionStatement:
 		return i.evalExpression(s.Expr, env)
 	case *parser.BlockStatement:
@@ -1725,10 +1914,18 @@ func (i *Interpreter) evalMember(e *parser.MemberExpression, env *Environment) (
 
 	if obj.Type == VAL_STRUCT {
 		val, ok := obj.StructVal.Fields[e.Member]
-		if !ok {
-			return nil, fmt.Errorf("%s: struct %q has no field %q", e.TokenPos(), obj.StructVal.TypeName, e.Member)
+		if ok {
+			return val, nil
 		}
-		return val, nil
+		// Struct embedding: search embedded struct fields
+		for _, field := range obj.StructVal.Fields {
+			if field.Type == VAL_STRUCT {
+				if embedded, ok := field.StructVal.Fields[e.Member]; ok {
+					return embedded, nil
+				}
+			}
+		}
+		return nil, fmt.Errorf("%s: struct %q has no field %q", e.TokenPos(), obj.StructVal.TypeName, e.Member)
 	}
 
 	// Array/string .length

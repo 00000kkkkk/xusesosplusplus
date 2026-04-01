@@ -59,6 +59,7 @@ const (
 	TOKEN_XUTHROW  // xuthrow (throw)
 	TOKEN_XUSPAWN      // xuspawn (spawn goroutine)
 	TOKEN_XUINTERFACE  // xuinterface (interface/trait)
+	TOKEN_XUDEFER      // xudefer (defer)
 
 	// Type keywords
 	TOKEN_INT_TYPE
@@ -147,6 +148,7 @@ var tokenNames = map[TokenType]string{
 	TOKEN_XUTHROW:  "xuthrow",
 	TOKEN_XUSPAWN:      "xuspawn",
 	TOKEN_XUINTERFACE:  "xuinterface",
+	TOKEN_XUDEFER:      "xudefer",
 
 	TOKEN_INT_TYPE:     "int",
 	TOKEN_INT8_TYPE:    "int8",
@@ -239,6 +241,7 @@ var keywords = map[string]TokenType{
 	"xuthrow":  TOKEN_XUTHROW,
 	"xuspawn":      TOKEN_XUSPAWN,
 	"xuinterface":  TOKEN_XUINTERFACE,
+	"xudefer":      TOKEN_XUDEFER,
 	"int":      TOKEN_INT_TYPE,
 	"int8":     TOKEN_INT8_TYPE,
 	"int16":    TOKEN_INT16_TYPE,
