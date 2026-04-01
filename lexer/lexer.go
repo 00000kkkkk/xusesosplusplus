@@ -302,7 +302,7 @@ func (l *Lexer) scanString(startPos Position) Token {
 			buf.WriteRune(escaped)
 			continue
 		}
-		if ch == '{' {
+		if ch == '{' && (isIdentStart(l.peekNext()) || isDigit(l.peekNext())) {
 			l.advance()
 			// Start interpolation
 			if !hasInterp {

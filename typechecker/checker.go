@@ -88,6 +88,55 @@ func (c *Checker) registerBuiltins() {
 	c.scope.define("to_float", &FuncType{ParamTypes: []Type{TypeInt}, ReturnType: TypeFloat}, false)
 	c.scope.define("to_str", &FuncType{ParamTypes: []Type{TypeInt}, ReturnType: TypeStr}, false)
 	c.scope.define("append", &FuncType{ReturnType: &ArrayType{ElementType: TypeVoid}}, false)
+
+	// String/array built-ins
+	c.scope.define("contains", &FuncType{ReturnType: TypeBool}, false)
+	c.scope.define("split", &FuncType{ReturnType: &ArrayType{ElementType: TypeStr}}, false)
+	c.scope.define("trim", &FuncType{ReturnType: TypeStr}, false)
+	c.scope.define("replace", &FuncType{ReturnType: TypeStr}, false)
+	c.scope.define("upper", &FuncType{ReturnType: TypeStr}, false)
+	c.scope.define("lower", &FuncType{ReturnType: TypeStr}, false)
+	c.scope.define("starts_with", &FuncType{ReturnType: TypeBool}, false)
+	c.scope.define("ends_with", &FuncType{ReturnType: TypeBool}, false)
+	c.scope.define("join", &FuncType{ReturnType: TypeStr}, false)
+	c.scope.define("slice", &FuncType{ReturnType: TypeVoid}, false)
+	c.scope.define("push", &FuncType{ReturnType: TypeVoid}, false)
+	c.scope.define("range_arr", &FuncType{ReturnType: &ArrayType{ElementType: TypeInt}}, false)
+	c.scope.define("index_of", &FuncType{ReturnType: TypeInt}, false)
+	c.scope.define("substr", &FuncType{ReturnType: TypeStr}, false)
+	c.scope.define("char_at", &FuncType{ReturnType: TypeStr}, false)
+	c.scope.define("char_code", &FuncType{ReturnType: TypeInt}, false)
+	c.scope.define("from_char_code", &FuncType{ReturnType: TypeStr}, false)
+	c.scope.define("string_len", &FuncType{ReturnType: TypeInt}, false)
+
+	// Math built-ins
+	c.scope.define("abs", &FuncType{ReturnType: TypeInt}, false)
+	c.scope.define("max", &FuncType{ReturnType: TypeInt}, false)
+	c.scope.define("min", &FuncType{ReturnType: TypeInt}, false)
+	c.scope.define("math_pi", &FuncType{ReturnType: TypeFloat}, false)
+	c.scope.define("math_e", &FuncType{ReturnType: TypeFloat}, false)
+	c.scope.define("math_floor", &FuncType{ReturnType: TypeInt}, false)
+	c.scope.define("math_ceil", &FuncType{ReturnType: TypeInt}, false)
+	c.scope.define("math_pow", &FuncType{ReturnType: TypeFloat}, false)
+	c.scope.define("math_round", &FuncType{ReturnType: TypeInt}, false)
+	c.scope.define("math_sin", &FuncType{ReturnType: TypeFloat}, false)
+	c.scope.define("math_cos", &FuncType{ReturnType: TypeFloat}, false)
+	c.scope.define("math_log", &FuncType{ReturnType: TypeFloat}, false)
+
+	// IO/OS built-ins
+	c.scope.define("input", &FuncType{ReturnType: TypeStr}, false)
+	c.scope.define("exit", &FuncType{ReturnType: TypeVoid}, false)
+	c.scope.define("panic", &FuncType{ReturnType: TypeVoid}, false)
+	c.scope.define("io_read_file", &FuncType{ReturnType: TypeStr}, false)
+	c.scope.define("io_write_file", &FuncType{ReturnType: TypeVoid}, false)
+	c.scope.define("os_args", &FuncType{ReturnType: &ArrayType{ElementType: TypeStr}}, false)
+	c.scope.define("os_getenv", &FuncType{ReturnType: TypeStr}, false)
+
+	// Map built-ins
+	c.scope.define("has_key", &FuncType{ReturnType: TypeBool}, false)
+	c.scope.define("keys", &FuncType{ReturnType: &ArrayType{ElementType: TypeStr}}, false)
+	c.scope.define("values", &FuncType{ReturnType: &ArrayType{ElementType: TypeVoid}}, false)
+	c.scope.define("delete", &FuncType{ReturnType: TypeVoid}, false)
 }
 
 // Check type-checks a program and returns any errors.

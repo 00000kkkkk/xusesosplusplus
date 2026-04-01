@@ -513,6 +513,92 @@ func (i *Interpreter) registerBuiltins() {
 		}
 		return StringVal(os.Getenv(args[0].StringVal)), nil
 	}}, false)
+
+	// File I/O
+	i.globals.Define("io_read_file", &Value{Type: VAL_BUILTIN, BuiltinVal: func(args []*Value) (*Value, error) {
+		if len(args) != 1 || args[0].Type != VAL_STRING {
+			return nil, fmt.Errorf("io_read_file() takes 1 string argument")
+		}
+		data, err := os.ReadFile(args[0].StringVal)
+		if err != nil {
+			return nil, fmt.Errorf("io_read_file: %s", err)
+		}
+		return StringVal(string(data)), nil
+	}}, false)
+
+	i.globals.Define("io_write_file", &Value{Type: VAL_BUILTIN, BuiltinVal: func(args []*Value) (*Value, error) {
+		if len(args) != 2 || args[0].Type != VAL_STRING || args[1].Type != VAL_STRING {
+			return nil, fmt.Errorf("io_write_file() takes filename and content strings")
+		}
+		if err := os.WriteFile(args[0].StringVal, []byte(args[1].StringVal), 0644); err != nil {
+			return nil, fmt.Errorf("io_write_file: %s", err)
+		}
+		return NullValue(), nil
+	}}, false)
+
+	i.globals.Define("char_at", &Value{Type: VAL_BUILTIN, BuiltinVal: func(args []*Value) (*Value, error) {
+		if len(args) != 2 || args[0].Type != VAL_STRING || args[1].Type != VAL_INT {
+			return nil, fmt.Errorf("char_at() takes string and int")
+		}
+		idx := int(args[1].IntVal)
+		if idx < 0 || idx >= len(args[0].StringVal) {
+			return StringVal(""), nil
+		}
+		return StringVal(string(args[0].StringVal[idx])), nil
+	}}, false)
+
+	i.globals.Define("char_code", &Value{Type: VAL_BUILTIN, BuiltinVal: func(args []*Value) (*Value, error) {
+		if len(args) != 1 || args[0].Type != VAL_STRING {
+			return nil, fmt.Errorf("char_code() takes 1 string argument")
+		}
+		if len(args[0].StringVal) == 0 {
+			return IntVal(0), nil
+		}
+		return IntVal(int64(args[0].StringVal[0])), nil
+	}}, false)
+
+	i.globals.Define("from_char_code", &Value{Type: VAL_BUILTIN, BuiltinVal: func(args []*Value) (*Value, error) {
+		if len(args) != 1 || args[0].Type != VAL_INT {
+			return nil, fmt.Errorf("from_char_code() takes 1 int argument")
+		}
+		return StringVal(string(rune(args[0].IntVal))), nil
+	}}, false)
+
+	i.globals.Define("substr", &Value{Type: VAL_BUILTIN, BuiltinVal: func(args []*Value) (*Value, error) {
+		if len(args) != 3 || args[0].Type != VAL_STRING || args[1].Type != VAL_INT || args[2].Type != VAL_INT {
+			return nil, fmt.Errorf("substr() takes string, start, length")
+		}
+		s := args[0].StringVal
+		start := int(args[1].IntVal)
+		length := int(args[2].IntVal)
+		if start < 0 { start = 0 }
+		if start >= len(s) { return StringVal(""), nil }
+		end := start + length
+		if end > len(s) { end = len(s) }
+		return StringVal(s[start:end]), nil
+	}}, false)
+
+	i.globals.Define("index_of", &Value{Type: VAL_BUILTIN, BuiltinVal: func(args []*Value) (*Value, error) {
+		if len(args) != 2 || args[0].Type != VAL_STRING || args[1].Type != VAL_STRING {
+			return nil, fmt.Errorf("index_of() takes 2 string arguments")
+		}
+		return IntVal(int64(strings.Index(args[0].StringVal, args[1].StringVal))), nil
+	}}, false)
+
+	i.globals.Define("string_len", &Value{Type: VAL_BUILTIN, BuiltinVal: func(args []*Value) (*Value, error) {
+		if len(args) != 1 || args[0].Type != VAL_STRING {
+			return nil, fmt.Errorf("string_len() takes 1 string argument")
+		}
+		return IntVal(int64(len(args[0].StringVal))), nil
+	}}, false)
+
+	i.globals.Define("panic", &Value{Type: VAL_BUILTIN, BuiltinVal: func(args []*Value) (*Value, error) {
+		msg := "panic"
+		if len(args) > 0 { msg = args[0].String() }
+		fmt.Fprintf(os.Stderr, "panic: %s\n", msg)
+		os.Exit(1)
+		return NullValue(), nil
+	}}, false)
 }
 
 func toFloat(v *Value) (float64, bool) {

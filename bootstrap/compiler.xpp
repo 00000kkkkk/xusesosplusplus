@@ -1,0 +1,530 @@
+// Xuesos++ Self-Hosting Compiler (Bootstrap)
+// Compiles a subset of Xuesos++ to C code.
+
+xuiar src = ""
+xuiar pos = 0
+xuiar tok_type = 0
+xuiar tok_val = ""
+xuiar output = ""
+xuiar func_decls = ""
+
+xuet TOK_EOF = 0
+xuet TOK_IDENT = 1
+xuet TOK_INT = 2
+xuet TOK_STRING = 3
+xuet TOK_XUEN = 10
+xuet TOK_XUET = 11
+xuet TOK_XUIAR = 12
+xuet TOK_XUIF = 13
+xuet TOK_XUELSE = 14
+xuet TOK_XUIOR = 15
+xuet TOK_XUIN = 16
+xuet TOK_XUETURN = 17
+xuet TOK_XUILE = 18
+xuet TOK_XUITRU = 19
+xuet TOK_XUINIA = 20
+xuet TOK_PLUS = 30
+xuet TOK_MINUS = 31
+xuet TOK_STAR = 32
+xuet TOK_SLASH = 33
+xuet TOK_PERCENT = 34
+xuet TOK_ASSIGN = 35
+xuet TOK_EQ = 36
+xuet TOK_NEQ = 37
+xuet TOK_LT = 38
+xuet TOK_GT = 39
+xuet TOK_LTE = 40
+xuet TOK_GTE = 41
+xuet TOK_AND = 42
+xuet TOK_OR = 43
+xuet TOK_NOT = 44
+xuet TOK_LPAREN = 50
+xuet TOK_RPAREN = 51
+xuet TOK_LBRACE = 52
+xuet TOK_RBRACE = 53
+xuet TOK_COMMA = 54
+xuet TOK_DOTDOT = 55
+xuet TOK_INT_TYPE = 60
+xuet TOK_STR_TYPE = 61
+
+xuen is_alpha(c str) bool {
+    xuet code = char_code(c)
+    xueturn (code >= 65 && code <= 90) || (code >= 97 && code <= 122) || c == "_"
+}
+
+xuen is_digit(c str) bool {
+    xuet code = char_code(c)
+    xueturn code >= 48 && code <= 57
+}
+
+xuen peek_char() str {
+    xuif (pos >= string_len(src)) {
+        xueturn ""
+    }
+    xueturn char_at(src, pos)
+}
+
+xuen advance_char() str {
+    xuet c = peek_char()
+    pos = pos + 1
+    xueturn c
+}
+
+xuen skip_ws() {
+    xuile (pos < string_len(src)) {
+        xuet c = peek_char()
+        xuif (c == " " || c == "\t" || c == "\r" || c == "\n") {
+            advance_char()
+        } xuelse xuif (c == "/" && pos + 1 < string_len(src) && char_at(src, pos + 1) == "/") {
+            xuile (pos < string_len(src) && peek_char() != "\n") {
+                advance_char()
+            }
+        } xuelse {
+            xueturn
+        }
+    }
+}
+
+xuen lookup_kw(w str) int {
+    xuif (w == "xuen") { xueturn TOK_XUEN }
+    xuif (w == "xuet") { xueturn TOK_XUET }
+    xuif (w == "xuiar") { xueturn TOK_XUIAR }
+    xuif (w == "xuif") { xueturn TOK_XUIF }
+    xuif (w == "xuelse") { xueturn TOK_XUELSE }
+    xuif (w == "xuior") { xueturn TOK_XUIOR }
+    xuif (w == "xuin") { xueturn TOK_XUIN }
+    xuif (w == "xueturn") { xueturn TOK_XUETURN }
+    xuif (w == "xuile") { xueturn TOK_XUILE }
+    xuif (w == "xuitru") { xueturn TOK_XUITRU }
+    xuif (w == "xuinia") { xueturn TOK_XUINIA }
+    xuif (w == "int") { xueturn TOK_INT_TYPE }
+    xuif (w == "str") { xueturn TOK_STR_TYPE }
+    xueturn TOK_IDENT
+}
+
+xuen next_tok() {
+    skip_ws()
+    xuif (pos >= string_len(src)) {
+        tok_type = TOK_EOF
+        tok_val = ""
+        xueturn
+    }
+    xuet c = advance_char()
+
+    xuif (is_alpha(c)) {
+        xuiar w = c
+        xuile (pos < string_len(src) && (is_alpha(peek_char()) || is_digit(peek_char()))) {
+            w = w + advance_char()
+        }
+        tok_type = lookup_kw(w)
+        tok_val = w
+        xueturn
+    }
+
+    xuif (is_digit(c)) {
+        xuiar n = c
+        xuile (pos < string_len(src) && is_digit(peek_char())) {
+            n = n + advance_char()
+        }
+        tok_type = TOK_INT
+        tok_val = n
+        xueturn
+    }
+
+    xuif (c == "\"") {
+        xuiar s = ""
+        xuile (pos < string_len(src) && peek_char() != "\"") {
+            xuet ch = advance_char()
+            xuif (ch == "\\") {
+                xuet esc = advance_char()
+                xuif (esc == "n") {
+                    s = s + "\n"
+                } xuelse xuif (esc == "t") {
+                    s = s + "\t"
+                } xuelse {
+                    s = s + esc
+                }
+            } xuelse {
+                s = s + ch
+            }
+        }
+        advance_char()
+        tok_type = TOK_STRING
+        tok_val = s
+        xueturn
+    }
+
+    xuif (c == "=" && peek_char() == "=") {
+        advance_char()
+        tok_type = TOK_EQ
+        tok_val = "=="
+        xueturn
+    }
+    xuif (c == "!" && peek_char() == "=") {
+        advance_char()
+        tok_type = TOK_NEQ
+        tok_val = "!="
+        xueturn
+    }
+    xuif (c == "<" && peek_char() == "=") {
+        advance_char()
+        tok_type = TOK_LTE
+        tok_val = "<="
+        xueturn
+    }
+    xuif (c == ">" && peek_char() == "=") {
+        advance_char()
+        tok_type = TOK_GTE
+        tok_val = ">="
+        xueturn
+    }
+    xuif (c == "&" && peek_char() == "&") {
+        advance_char()
+        tok_type = TOK_AND
+        tok_val = "&&"
+        xueturn
+    }
+    xuif (c == "|" && peek_char() == "|") {
+        advance_char()
+        tok_type = TOK_OR
+        tok_val = "||"
+        xueturn
+    }
+    xuif (c == "." && peek_char() == ".") {
+        advance_char()
+        tok_type = TOK_DOTDOT
+        tok_val = ".."
+        xueturn
+    }
+
+    xuif (c == "+") { tok_type = TOK_PLUS
+        tok_val = "+"
+        xueturn }
+    xuif (c == "-") { tok_type = TOK_MINUS
+        tok_val = "-"
+        xueturn }
+    xuif (c == "*") { tok_type = TOK_STAR
+        tok_val = "*"
+        xueturn }
+    xuif (c == "/") { tok_type = TOK_SLASH
+        tok_val = "/"
+        xueturn }
+    xuif (c == "%") { tok_type = TOK_PERCENT
+        tok_val = "%"
+        xueturn }
+    xuif (c == "=") { tok_type = TOK_ASSIGN
+        tok_val = "="
+        xueturn }
+    xuif (c == "<") { tok_type = TOK_LT
+        tok_val = "<"
+        xueturn }
+    xuif (c == ">") { tok_type = TOK_GT
+        tok_val = ">"
+        xueturn }
+    xuif (c == "!") { tok_type = TOK_NOT
+        tok_val = "!"
+        xueturn }
+    xuif (c == "(") { tok_type = TOK_LPAREN
+        tok_val = "("
+        xueturn }
+    xuif (c == ")") { tok_type = TOK_RPAREN
+        tok_val = ")"
+        xueturn }
+    xuif (c == "{") { tok_type = TOK_LBRACE
+        tok_val = "{"
+        xueturn }
+    xuif (c == "}") { tok_type = TOK_RBRACE
+        tok_val = "}"
+        xueturn }
+    xuif (c == ",") { tok_type = TOK_COMMA
+        tok_val = ","
+        xueturn }
+
+    panic("unexpected char: " + c)
+}
+
+xuen emit(s str) {
+    output = output + s
+}
+
+xuen emit_ln(s str) {
+    output = output + s + "\n"
+}
+
+xuen expect_tok(t int) {
+    xuif (tok_type != t) {
+        panic("expected " + to_str(t) + " got " + to_str(tok_type) + " val=" + tok_val)
+    }
+    next_tok()
+}
+
+xuen parse_type() str {
+    xuif (tok_type == TOK_INT_TYPE) {
+        next_tok()
+        xueturn "int64_t"
+    }
+    xuif (tok_type == TOK_STR_TYPE) {
+        next_tok()
+        xueturn "const char*"
+    }
+    xuif (tok_type == TOK_IDENT) {
+        xuet n = tok_val
+        next_tok()
+        xueturn n
+    }
+    xueturn "int64_t"
+}
+
+xuen is_binop() bool {
+    xueturn tok_type >= 30 && tok_type <= 44
+}
+
+xuen parse_primary() {
+    xuif (tok_type == TOK_INT) {
+        emit(tok_val + "LL")
+        next_tok()
+    } xuelse xuif (tok_type == TOK_STRING) {
+        emit("\"" + tok_val + "\"")
+        next_tok()
+    } xuelse xuif (tok_type == TOK_XUITRU) {
+        emit("1")
+        next_tok()
+    } xuelse xuif (tok_type == TOK_XUINIA) {
+        emit("0")
+        next_tok()
+    } xuelse xuif (tok_type == TOK_NOT) {
+        emit("(!")
+        next_tok()
+        parse_primary()
+        emit(")")
+    } xuelse xuif (tok_type == TOK_MINUS) {
+        emit("(-")
+        next_tok()
+        parse_primary()
+        emit(")")
+    } xuelse xuif (tok_type == TOK_LPAREN) {
+        emit("(")
+        next_tok()
+        parse_expr()
+        expect_tok(TOK_RPAREN)
+        emit(")")
+    } xuelse xuif (tok_type == TOK_IDENT) {
+        xuet name = tok_val
+        next_tok()
+        xuif (tok_type == TOK_LPAREN) {
+            next_tok()
+            xuif (name == "print") {
+                emit("printf(\"%lld\\n\", (long long)(")
+                parse_expr()
+                emit("))")
+            } xuelse {
+                emit("xpp_" + name + "(")
+                xuif (tok_type != TOK_RPAREN) {
+                    parse_expr()
+                    xuile (tok_type == TOK_COMMA) {
+                        emit(", ")
+                        next_tok()
+                        parse_expr()
+                    }
+                }
+                emit(")")
+            }
+            expect_tok(TOK_RPAREN)
+        } xuelse {
+            emit(name)
+        }
+    }
+}
+
+xuen parse_expr() {
+    parse_primary()
+    xuile (is_binop()) {
+        emit(" " + tok_val + " ")
+        next_tok()
+        parse_primary()
+    }
+}
+
+xuen parse_block() {
+    expect_tok(TOK_LBRACE)
+    emit_ln(" {")
+    xuile (tok_type != TOK_RBRACE && tok_type != TOK_EOF) {
+        parse_stmt()
+    }
+    expect_tok(TOK_RBRACE)
+    emit_ln("}")
+}
+
+xuen parse_stmt() {
+    xuif (tok_type == TOK_XUET || tok_type == TOK_XUIAR) {
+        xuet is_const = tok_type == TOK_XUET
+        next_tok()
+        xuet name = tok_val
+        expect_tok(TOK_IDENT)
+        xuiar tp = "int64_t"
+        xuif (tok_type != TOK_ASSIGN) {
+            tp = parse_type()
+        }
+        expect_tok(TOK_ASSIGN)
+        xuif (is_const) {
+            emit("  const " + tp + " " + name + " = ")
+        } xuelse {
+            emit("  " + tp + " " + name + " = ")
+        }
+        parse_expr()
+        emit_ln(";")
+
+    } xuelse xuif (tok_type == TOK_XUETURN) {
+        next_tok()
+        emit("  return ")
+        xuif (tok_type != TOK_RBRACE) {
+            parse_expr()
+        }
+        emit_ln(";")
+
+    } xuelse xuif (tok_type == TOK_XUIF) {
+        next_tok()
+        expect_tok(TOK_LPAREN)
+        emit("  if (")
+        parse_expr()
+        expect_tok(TOK_RPAREN)
+        emit(")")
+        parse_block()
+        xuif (tok_type == TOK_XUELSE) {
+            next_tok()
+            xuif (tok_type == TOK_XUIF) {
+                emit("  else ")
+                parse_stmt()
+            } xuelse {
+                emit("  else")
+                parse_block()
+            }
+        }
+
+    } xuelse xuif (tok_type == TOK_XUIOR) {
+        next_tok()
+        expect_tok(TOK_LPAREN)
+        xuet vname = tok_val
+        expect_tok(TOK_IDENT)
+        expect_tok(TOK_XUIN)
+        emit("  for (int64_t " + vname + " = ")
+        parse_expr()
+        xuif (tok_type == TOK_DOTDOT) {
+            next_tok()
+            emit("; " + vname + " < ")
+            parse_expr()
+            emit("; " + vname + "++)")
+        }
+        expect_tok(TOK_RPAREN)
+        parse_block()
+
+    } xuelse xuif (tok_type == TOK_XUILE) {
+        next_tok()
+        expect_tok(TOK_LPAREN)
+        emit("  while (")
+        parse_expr()
+        expect_tok(TOK_RPAREN)
+        emit(")")
+        parse_block()
+
+    } xuelse xuif (tok_type == TOK_IDENT) {
+        xuet name = tok_val
+        next_tok()
+        xuif (tok_type == TOK_ASSIGN) {
+            next_tok()
+            emit("  " + name + " = ")
+            parse_expr()
+            emit_ln(";")
+        } xuelse xuif (tok_type == TOK_LPAREN) {
+            next_tok()
+            xuif (name == "print") {
+                emit("  printf(\"%lld\\n\", (long long)(")
+                parse_expr()
+                emit("));\n")
+            } xuelse {
+                emit("  xpp_" + name + "(")
+                xuif (tok_type != TOK_RPAREN) {
+                    parse_expr()
+                    xuile (tok_type == TOK_COMMA) {
+                        emit(", ")
+                        next_tok()
+                        parse_expr()
+                    }
+                }
+                emit(");\n")
+            }
+            expect_tok(TOK_RPAREN)
+        }
+
+    } xuelse xuif (tok_type == TOK_XUEN) {
+        parse_func()
+    }
+}
+
+xuen parse_func() {
+    next_tok()
+    xuet name = tok_val
+    expect_tok(TOK_IDENT)
+    expect_tok(TOK_LPAREN)
+    xuiar params = ""
+    xuiar first = xuitru
+    xuile (tok_type != TOK_RPAREN && tok_type != TOK_EOF) {
+        xuif (!first) {
+            expect_tok(TOK_COMMA)
+            params = params + ", "
+        }
+        xuet pn = tok_val
+        expect_tok(TOK_IDENT)
+        xuet pt = parse_type()
+        params = params + pt + " " + pn
+        first = xuinia
+    }
+    expect_tok(TOK_RPAREN)
+    xuiar rtype = "void"
+    xuif (tok_type != TOK_LBRACE) {
+        rtype = parse_type()
+    }
+    xuif (params == "") {
+        params = "void"
+    }
+    xuif (name == "main") {
+        emit("int main(void)")
+        parse_block()
+        emit_ln("  return 0;")
+        emit_ln("}")
+    } xuelse {
+        func_decls = func_decls + rtype + " xpp_" + name + "(" + params + ");\n"
+        emit(rtype + " xpp_" + name + "(" + params + ")")
+        parse_block()
+    }
+}
+
+xuen main() {
+    xuet args = os_args()
+    // Find the .xpp file argument (skip Go runtime args)
+    xuiar filename = ""
+    xuior (i xuin 0..len(args)) {
+        xuif (ends_with(args[i], ".xpp") && args[i] != "bootstrap/compiler.xpp" && args[i] != "bootstrap\\compiler.xpp") {
+            filename = args[i]
+        }
+    }
+    xuif (filename == "") {
+        print("Usage: xuesos run bootstrap/compiler.xpp <file.xpp>")
+        exit(1)
+    }
+    src = io_read_file(filename)
+    pos = 0
+    xuet hdrs = "#include <stdio.h>\n#include <stdlib.h>\n#include <stdint.h>\n#include <stdbool.h>\n\n"
+    next_tok()
+    xuile (tok_type != TOK_EOF) {
+        xuif (tok_type == TOK_XUEN) {
+            parse_func()
+        } xuelse {
+            parse_stmt()
+        }
+    }
+    xuet result = hdrs + func_decls + "\n" + output
+    xuet out_file = replace(filename, ".xpp", ".c")
+    io_write_file(out_file, result)
+    print("Compiled: " + filename + " -> " + out_file)
+}
