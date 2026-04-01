@@ -1,0 +1,14 @@
+// Fibonacci sequence in Xuesos++
+xuen fibonacci(n int) int {
+    xuif (n <= 1) {
+        xueturn n
+    }
+    xueturn fibonacci(n - 1) + fibonacci(n - 2)
+}
+
+xuen main() {
+    xuior (i xuin 0..20) {
+        xuet result = fibonacci(i)
+        print(result)
+    }
+}

@@ -1,0 +1,15 @@
+// Pattern matching in Xuesos++
+xuen describe(n int) str {
+    xuiatch (n % 3) {
+        0 => xueturn "divisible by 3"
+        1 => xueturn "remainder 1"
+        _ => xueturn "remainder 2"
+    }
+    xueturn "unreachable"
+}
+
+xuen main() {
+    xuior (i xuin 1..10) {
+        print(i, "->", describe(i))
+    }
+}

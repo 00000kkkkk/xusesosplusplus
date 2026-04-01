@@ -1,0 +1,21 @@
+// Structs in Xuesos++
+xuiruct Player {
+    name str
+    health int
+    alive bool
+}
+
+xuimpl Player {
+    xuen take_damage(xuiar self, dmg int) {
+        self.health = self.health - dmg
+        xuif (self.health <= 0) {
+            self.alive = xuinia
+        }
+    }
+}
+
+xuen main() {
+    xuiar p = Player { name = "Hero", health = 100, alive = xuitru }
+    p.take_damage(30)
+    print(p.health)
+}

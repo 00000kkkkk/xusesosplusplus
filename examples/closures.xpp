@@ -1,0 +1,14 @@
+// Closures in Xuesos++
+xuen main() {
+    xuiar count = 0
+
+    xuen increment() int {
+        count = count + 1
+        xueturn count
+    }
+
+    print(increment())
+    print(increment())
+    print(increment())
+    print("Final count:", count)
+}

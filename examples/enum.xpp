@@ -1,0 +1,22 @@
+// Enums in Xuesos++
+xuenum Color {
+    Red
+    Green
+    Blue
+}
+
+xuenum Direction {
+    Up
+    Down
+    Left
+    Right
+}
+
+xuen main() {
+    xuet c = Red
+    print("Color:", c)
+    print("Type:", type(c))
+
+    xuet dir = Up
+    print("Direction:", dir)
+}

@@ -1,0 +1,23 @@
+// Array operations in Xuesos++
+xuen sum(arr []int) int {
+    xuiar total = 0
+    xuior (n xuin arr) {
+        total = total + n
+    }
+    xueturn total
+}
+
+xuen main() {
+    xuet nums = [10, 20, 30, 40, 50]
+    print("Array:", nums)
+    print("Length:", len(nums))
+    print("Sum:", sum(nums))
+    print("First:", nums[0])
+    print("Last:", nums[4])
+
+    // Modify array
+    xuiar data = [1, 2, 3]
+    data = append(data, 4)
+    data = append(data, 5)
+    print("After append:", data)
+}

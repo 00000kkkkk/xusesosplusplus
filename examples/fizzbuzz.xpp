@@ -1,0 +1,14 @@
+// FizzBuzz in Xuesos++
+xuen main() {
+    xuior (i xuin 1..101) {
+        xuif (i % 15 == 0) {
+            print("FizzBuzz")
+        } xuelse xuif (i % 3 == 0) {
+            print("Fizz")
+        } xuelse xuif (i % 5 == 0) {
+            print("Buzz")
+        } xuelse {
+            print(i)
+        }
+    }
+}
