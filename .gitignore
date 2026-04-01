@@ -1,5 +1,5 @@
-xuesos
-xuesos.exe
+/xuesos
+/xuesos.exe
 *.c
 !codegen/runtime/runtime.c
 *.o
