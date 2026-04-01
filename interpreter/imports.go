@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 
 	"github.com/00000kkkkk/xusesosplusplus/lexer"
 	"github.com/00000kkkkk/xusesosplusplus/parser"
@@ -35,6 +36,21 @@ func (r *ImportResolver) Resolve(path string, interp *Interpreter) error {
 	filePath := filepath.Join(r.basePath, path)
 	if filepath.Ext(filePath) == "" {
 		filePath += ".xpp"
+	}
+
+	// Try xpp_modules directories if the direct path doesn't exist
+	if _, err := os.Stat(filePath); err != nil {
+		modulesPath := "xpp_modules"
+		_ = filepath.Walk(modulesPath, func(p string, info os.FileInfo, walkErr error) error {
+			if walkErr != nil {
+				return nil
+			}
+			if strings.HasSuffix(p, string(filepath.Separator)+path+".xpp") ||
+				strings.HasSuffix(p, "/"+path+".xpp") {
+				filePath = p
+			}
+			return nil
+		})
 	}
 
 	// Prevent circular imports

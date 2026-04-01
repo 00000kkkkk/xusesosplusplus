@@ -4,4 +4,6 @@
 !codegen/runtime/runtime.c
 *.o
 *.out
+xpp_modules/
+xuesos.lock
 .claude/

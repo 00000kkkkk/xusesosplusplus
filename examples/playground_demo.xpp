@@ -1,0 +1,66 @@
+// Playground demo — shows off all features in one file
+
+xuiruct Vec2 {
+    x float
+    y float
+}
+
+xuen factorial(n int) int {
+    xuif (n <= 1) { xueturn 1 }
+    xueturn n * factorial(n - 1)
+}
+
+xuen main() {
+    print("=== Xuesos++ Language Demo ===")
+    print("")
+
+    // Variables and types
+    xuet name = "Xuesos++"
+    xuiar counter = 0
+    print("Language: {name}")
+
+    // Functions
+    print("10! = {factorial(10)}")
+
+    // Structs
+    xuet v = Vec2 { x = 3.0, y = 4.0 }
+    print("Vector: ({v.x}, {v.y})")
+    print("Magnitude: {sqrt(v.x * v.x + v.y * v.y)}")
+
+    // Arrays + lambdas
+    xuet nums = [1, 2, 3, 4, 5]
+    xuiar squares = []
+    xuior (n xuin nums) {
+        push(squares, n * n)
+    }
+    print("Squares: {squares}")
+
+    // Maps
+    xuet config = {"debug": "true", "version": "1.0", "lang": "xuesos++"}
+    print("Config keys: {keys(config)}")
+
+    // Pattern matching
+    xuior (i xuin 1..8) {
+        xuiatch (i % 3) {
+            0 => print("  {i} divisible by 3")
+            _ => print("  {i} remainder {i % 3}")
+        }
+    }
+
+    // Channels
+    xuet ch = channel(3)
+    send(ch, 42)
+    send(ch, 99)
+    print("From channel: {recv(ch)}, {recv(ch)}")
+
+    // Error handling
+    xutry {
+        xuthrow "demo error"
+    } xucatch (e) {
+        print("Caught: {e}")
+    }
+
+    // Defer
+    xudefer print("Deferred: runs last!")
+    print("Before defer")
+}
